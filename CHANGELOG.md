@@ -4,6 +4,32 @@ All notable changes to Better Grok Bot are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Plugins grid used `@container (max-width: 720px)` on the ~641px pane, so a 945px Grok Bot window was 1-col and no longer matched Userscript++. It now uses USPP's viewport `@media (max-width: 720px)` (2-col at the usual window; long names ellipsis).
+- Plugin Configure dialog showed **Authors: Unknown** for bundled plugins (cards already said Unravl) and an empty body for disabled extra-only plugins. Bundled authors are Unravl; disabled extra-only plugins say **Enable this plugin to configure it.**
+- Settings overlay died after the first visit: clicking **Better Grok Bot** passed `anchor: "bgb"` into pane-header's heading-link, which does `OL[anchor].label` and threw `Cannot read properties of undefined (reading 'label')`. The tab now reuses the native `general` heading-link key (`id` stays `bgb`). The sticky layout error boundary is also gone — only the BGB pane is bounded, and the native General pane stays mounted (hidden) while that tab is selected.
+- Settings → Better Grok Bot could not scroll: native `.sand-settings-panel__body` is `overflow: hidden` (General uses an inner ScrollArea). The card grid is not that scroller, so the BGB panel body now sets `overflow-y: auto`.
+- Sidebar Folders: **New folder** is a 36px `folder-plus` icon in the header (left of Search), not a labeled row (that overlapped the traffic lights). Leftover `aside > .bgb-sidebar-folders__new` is hidden. Collapsed rail injects into `__rail-actions`.
+- Sidebar Folders: dragging a multi-selected set of bots into a folder moves the whole set (native drop only moved the row under the pointer). Folder headers are valid drop targets.
+- Sidebar Folders: when the computer has no sections store (Grok Bot's `getHostSidebarSections` rejects), answer an empty list instead of throwing — throwing left the native cache at `null` and hid every folder UI. Bot context-menu New folder no longer requires the `grok_bot_multiplayer` flag.
+- macOS: re-export `VITE_DEV_SERVER_URL` at login from a `/bin/launchctl setenv` LaunchAgent (`io.github.unravl.bettergrokbot.hook`) instead of waiting for the compiled `bgb agent` binary. After reboot the variable is wiped, and the agent can take minutes to reach `reexportHook` — Grok Bot opened from the Dock in that window was vanilla. `bgb login` now setenv's itself too.
+
+### Added
+
+- Bundled **Compact Connect Apps** (`connect-apps`, on by default): keep Connect apps as the compact plus button. Native Grok Bot remounts the Gmail/Drive/Calendar logo strip every time the sidebar expands when fewer than 4 apps are connected.
+- Settings: Better Grok Bot is its own Settings tab (left nav), not a section at the bottom of General.
+- Settings: a divider, then **Better Grok Bot** / **Plugins** / **Themes** (Userscript++ group). Plugin cards sit on Plugins (not nested in a native Section). Clicking a plugin's gear opens a settings **dialog**; fields stay native `Row` / `Toggle` / `Select`.
+
+### Changed
+
+- Chat Search header control clones the sidebar island Search (icon-only magnifier), not Share's labeled pill. The find bar uses the app's elevated surface and hairline border instead of the violet–cyan gradient.
+- Removed the "Better Grok Bot" title from the top of the agents sidebar (window title and in-app name strings stay).
+- Weekly Usage hover is Void++'s WeekBlock panel (100ms delay, `12% used` + live `Resets in 1d …` countdown), not a native `title` tooltip.
+- Injected icons use the app's `cursor-icons` font (`search`, `puzzle-piece`, `desktop-download`, `waveform`) instead of hand-drawn SVGs next to native chrome. Compact mode hides Export's label, not the whole button.
+- Hide the native compact-sidebar control (assistiveTech / CDP). Do not pad or re-justify `.sand-agents-sidebar__header` — that stacked on the traffic-light overlay and sat Search/+ on the pinned bot.
+- Chat Search (and Export, if enabled) drop their labels only while the info pane inner is actually open. Do not set `container-type` on `.sand-chat-header__controls` (it collapsed that cluster to 0 width after the pane closed). The pane stays mounted at width 0; the inner is what gets `[hidden]`.
+
 ## [0.2.1] - 2026-11-08
 
 ### Fixed

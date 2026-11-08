@@ -2,6 +2,7 @@ import type { AppAccess, JsxFn, PluginLogger, ReactLike, UiPrimitives } from "..
 import { createBoundary, jsxFromReact } from "./boundary.ts";
 import { createSidebarBrand } from "./brand.ts";
 import { isRecord } from "./payload.ts";
+import { createSettingsShell, type ShellProps } from "./ui/shell.ts";
 
 /** Receives what the core hooks (`bgb-react`, `bgb-client`, `bgb-settings`, `bgb-brand`) hand over from the app. */
 export interface HookRegistry {
@@ -13,6 +14,8 @@ export interface HookRegistry {
 	provideClient<T>(client: T): T;
 	/** The Better Grok Bot section element, or null. Never throws. */
 	settingsSection(ui: UiPrimitives): unknown;
+	/** Wraps the settings layout with a Better Grok Bot tab, or null. Never throws. */
+	settingsShell(props: unknown): unknown;
 	/** The Better Grok Bot sidebar label element, or null. Never throws. */
 	sidebarBrand(): unknown;
 }
@@ -47,6 +50,17 @@ function isUiPrimitives(value: unknown): value is UiPrimitives {
 	);
 }
 
+function isShellProps(value: unknown): value is ShellProps {
+	return (
+		isRecord(value) &&
+		value.Layout != null &&
+		isRecord(value.activeSection) &&
+		typeof value.activeSection.id === "string" &&
+		Array.isArray(value.sections) &&
+		typeof value.onSelectSection === "function"
+	);
+}
+
 interface ClientListener {
 	listener(client: unknown): void;
 	last: unknown;
@@ -61,6 +75,7 @@ export function createHookRegistry(options: HookRegistryOptions): HookRegistry {
 	let ui: UiPrimitives | undefined;
 	let client: unknown;
 	let section: unknown;
+	let shell: unknown;
 	const reported = new Set<string>();
 	const clientListeners = new Set<ClientListener>();
 	let brand: unknown;
@@ -156,6 +171,23 @@ export function createHookRegistry(options: HookRegistryOptions): HookRegistry {
 				return react.createElement(section, { key: "bgb", ui: next });
 			} catch (error) {
 				return reportOnce("the settings section failed:", error);
+			}
+		},
+
+		settingsShell(next: unknown): unknown {
+			try {
+				if (react === undefined || jsx === undefined) return reportOnce("the settings tab needs the app's React, which never arrived");
+				if (!isShellProps(next)) return reportOnce("the settings tab got incomplete layout props");
+				// Do not wrap the layout in createBoundary: a sticky fail would make Settings
+				// unopenable for the rest of the session. Only the BGB pane is bounded.
+				shell ??= createSettingsShell(react, (tabId) => {
+					if (ui === undefined || react === undefined || jsx === undefined) return null;
+					section ??= createBoundary(react, jsx, options.createSection(react, jsx), "BetterGrokBot(settings)", log);
+					return react.createElement(section, { key: tabId, ui, tab: tabId });
+				});
+				return react.createElement(shell, next);
+			} catch (error) {
+				return reportOnce("the settings tab failed:", error);
 			}
 		},
 

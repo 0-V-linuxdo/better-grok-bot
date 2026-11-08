@@ -1,13 +1,11 @@
 import { definePlugin } from "@better-grok-bot/sdk";
-import { SYSTEM_CHILDREN_FIND, injectAfterMicrophone } from "../settings-inject.ts";
 
 const APP_CHUNK = /^assets\/index\.eager-app-[\w-]+\.js$/;
-const SETTINGS_VIEW_CHUNK = /^assets\/chunk-(?:view|general-pane)-[\w-]+\.js$/;
 
 export default definePlugin({
 	id: "voice-mcp",
 	name: "Voice MCP servers",
-	description: "Speak to Grok Bot to use tools from your own trusted MCP servers. Manage servers in Settings → General → System → Voice MCP servers. Voice only; text chat is unchanged.",
+	description: "Speak to Grok Bot to use tools from your own trusted MCP servers. Manage servers in Settings → Better Grok Bot → Voice MCP servers. Voice only; text chat is unchanged.",
 	version: "0.1.0",
 	apiVersion: 1,
 	permissions: ["mcp"],
@@ -44,14 +42,6 @@ export default definePlugin({
 				const dispatch = `if(await (globalThis.BetterGrokBot?.call("voice-mcp","dispatch",${toolCall},${active},()=>${call}.session===${active}&&${phases}.isCallUnderway(${call}.phase),output=>${send}({call:${call},active:${active},toolCallId:${toolCall}.callId,output}),${call})??false))return ${settled};`;
 				return match.replace(opening, opening + dispatch);
 			},
-			expect: 1,
-		},
-		{
-			// Same System section/Microphone-row anchor as Voice Keepalive. Use app React/JSX.
-			id: "settings-row",
-			file: SETTINGS_VIEW_CHUNK,
-			find: SYSTEM_CHILDREN_FIND,
-			replace: injectAfterMicrophone("voice-mcp", "SettingsRow", (p) => ({React:p.react,Row:p.row,Toggle:p.toggle})),
 			expect: 1,
 		},
 	],

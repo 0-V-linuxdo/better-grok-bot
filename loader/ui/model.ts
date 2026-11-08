@@ -25,6 +25,8 @@ export interface PluginRowModel {
 	canToggle: boolean;
 	/** Community plugins get Update and Uninstall. */
 	community: boolean;
+	/** Authors from the plugin definition. */
+	authors: string[];
 	granted: Permission[];
 	/** Setting rows: only for active plugins, from the schema this page loaded (`settings`). */
 	fields: { name: string; field: SettingField }[];
@@ -94,6 +96,7 @@ export function buildPluginRows(
 				enabled: plugin.state !== "disabled",
 				canToggle: plugin.state !== "invalid" && plugin.state !== "unsupported-platform",
 				community: plugin.source === "community",
+				authors: [...plugin.authors],
 				granted: [...plugin.granted],
 				fields: Object.entries(settings).map(([name, field]) => ({ name, field })),
 				settings: { ...schema },

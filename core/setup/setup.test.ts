@@ -270,7 +270,7 @@ test("a successful setup installs everything, records the hook and restarts a ru
 	expect(host.out).toContain("  ✗ startup (startup) patch-failed: anchor missed");
 	expect(host.out).toContain("  ✓ push-to-talk (push-to-talk) active");
 	expect(host.out.some((line) => line.includes("bgb-react"))).toBe(false);
-	expect(host.out.at(-1)).toBe("Open Grok Bot → Settings → General → Better Grok Bot");
+	expect(host.out.at(-1)).toBe("Open Grok Bot → Settings → Better Grok Bot");
 });
 
 test("--no-restart leaves a running Grok Bot alone and says so", async () => {

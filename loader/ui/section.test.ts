@@ -19,7 +19,7 @@ function memoryStorage() {
 	};
 }
 
-function setup() {
+function setup(react = createFakeReact(), tab = "bgb") {
 	const clock = new FakeClock();
 	const log = recordingLogger();
 	const store = createLoaderStore(RUNNING_KEY, clock, log);
@@ -32,7 +32,7 @@ function setup() {
 		],
 		{ buildKey: RUNNING_KEY, themes: [{ id: "dark", name: "Dark", enabled: false, valid: true }] },
 	);
-	const Section = createBgbSection(createFakeReact(), {
+	const Section = createBgbSection(react, {
 		store,
 		request: async (method, params) => {
 			requests.push({ method, params });
@@ -46,7 +46,7 @@ function setup() {
 		confirm: () => true,
 		log,
 	});
-	const render = (): FakeElement[] => elements(Section({ ui }));
+	const render = (): FakeElement[] => elements(Section({ ui, tab }));
 	return { clock, store, render, requests, reloads: () => reloads };
 }
 
@@ -128,41 +128,101 @@ describe("settings section", () => {
 		expect(reloadButton(tree)).toBeDefined();
 	});
 
-	test("rows: status, both settings toggles, plugins (community gets Update/Uninstall), install, themes, folders", () => {
+	test("core tab: status, both settings toggles, install, folders — no plugin cards", () => {
 		const { store, render } = setup();
 		store.setBridgeState("connected");
 		const tree = render();
-		const section = tree[0];
+		const section = tree.find((element) => element.type === "Section");
 		expect(section?.type).toBe("Section");
 		expect(section?.props.title).toBe("Better Grok Bot");
+		expect(tree.some((element) => element.props?.className === "bgb-settings-scroll")).toBe(true);
+		expect(tree.some((element) => element.props?.className === "bgb-settings-pane")).toBe(true);
+		expect(tree.some((element) => String(element.props?.className ?? "").includes("uspp-grid"))).toBe(false);
 		const labels = tree.filter((element) => element.type === "Row").map((row) => row.props.label);
 		expect(labels).toEqual([
 			"Better Grok Bot 0.1.0",
 			"Open Grok Bot at login",
 			"Install Better Grok Bot updates automatically",
-			"Push to talk",
-			"Community One · community",
-			"Dark",
 			"Open folder",
 		]);
+		expect(tree.filter((element) => element.props?.["data-bgb-plugin"] != null)).toEqual([]);
 		const buttons = tree.filter((element) => element.type === "Button").map((button) => button.props.children);
-		expect(buttons).toEqual(["Update", "Uninstall", "Plugins", "Themes", "Logs"]);
+		expect(buttons).toEqual(["Plugins", "Themes", "Logs"]);
 		const button = tree.find((element) => element.type === "Button");
 		expect(button?.props).toMatchObject({ size: "md", type: "button", variant: "secondary", style: { font: "b2" } });
 		const fieldRows = tree.filter((element) => typeof element.type === "function");
-		expect(fieldRows.map((element) => element.key)).toEqual(["setting:push-to-talk:key", "install"]);
+		expect(fieldRows.map((element) => element.key)).toEqual(["install"]);
+		expect(tree.some((element) => element.type === "dialog")).toBe(false);
+	});
+
+	test("plugins tab: Userscript++ cards, no wrapping Section", () => {
+		const { store, render } = setup(createFakeReact(), "bgb-plugins");
+		store.setBridgeState("connected");
+		const tree = render();
+		expect(tree.some((element) => element.type === "Section")).toBe(false);
+		expect(tree.some((element) => String(element.props?.className ?? "").includes("uspp-sticky"))).toBe(true);
+		expect(tree.some((element) => String(element.props?.className ?? "").includes("uspp-grid"))).toBe(true);
+		expect(tree.some((element) => String(element.props?.className ?? "").includes("uspp-select"))).toBe(true);
+		expect(tree.filter((element) => element.props?.role === "tab").map((element) => element.props.children)).toEqual(["Favorites", "All"]);
+		const cards = tree.filter((element) => element.props?.["data-bgb-plugin"] != null);
+		expect(cards.map((card) => card.props["data-bgb-plugin"])).toEqual(["push-to-talk", "community-one"]);
+		expect(cards.every((card) => card.type === "div" && String(card.props.className).includes("uspp-card"))).toBe(true);
+		expect(tree.some((element) => element.type === "button" && element.props["aria-label"] === "Configure")).toBe(true);
+		expect(tree.some((element) => element.type === "dialog")).toBe(false);
+	});
+
+	test("Configure opens a plugin settings dialog on top of the card grid", () => {
+		const react = createFakeReact();
+		const slots: unknown[] = [];
+		let cursor = 0;
+		react.useState = <S>(initial: S | (() => S)): [S, (next: S | ((previous: S) => S)) => void] => {
+			const index = cursor++;
+			if (slots.length <= index) slots.push(typeof initial === "function" ? (initial as () => S)() : initial);
+			return [
+				slots[index] as S,
+				(next) => {
+					slots[index] = typeof next === "function" ? (next as (previous: S) => S)(slots[index] as S) : next;
+				},
+			];
+		};
+		const { store, render } = setup(react, "bgb-plugins");
+		store.setBridgeState("connected");
+		const first = (() => {
+			cursor = 0;
+			return render();
+		})();
+		expect(first.some((element) => element.props?.["data-bgb-plugin-modal"] != null)).toBe(false);
+		const configure = first.find((element) => element.type === "button" && element.props["aria-label"] === "Configure");
+		(configure?.props.onClick as () => void)();
+		const second = (() => {
+			cursor = 0;
+			return render();
+		})();
+		expect(second.some((element) => element.props?.["data-bgb-plugin"] === "push-to-talk")).toBe(true);
+		expect(second.some((element) => element.type === "dialog" && element.props?.["data-bgb-plugin-modal"] === "push-to-talk")).toBe(true);
+		expect(second.some((element) => element.type === "Button" && element.props.children === "Back")).toBe(false);
+		expect(second.some((element) => element.type === "Button" && element.props.children === "Close")).toBe(false);
+		expect(second.some((element) => element.type === "button" && element.props["aria-label"] === "Close")).toBe(true);
+		expect(second.some((element) => element.type === "button" && element.props.children === "Reset")).toBe(true);
+		expect(second.some((element) => typeof element.props?.className === "string" && element.props.className.includes("uspp-muted"))).toBe(true);
+		const authors = second.find((element) => typeof element.props?.className === "string" && element.props.className.includes("uspp-muted"));
+		expect(authors?.props.children).toEqual(["Authors: ", "Unravl"]);
+		expect(second.filter((element) => typeof element.type === "function").map((element) => element.key)).toEqual(["setting:push-to-talk:key"]);
 	});
 
 	test("plugin toggles call plugins.setEnabled; theme toggles call themes.setEnabled", async () => {
 		const { store, render, requests } = setup();
 		store.setBridgeState("connected");
-		const tree = render();
-		const toggles = tree.filter((element) => element.type === "Toggle");
-		(toggles.find((toggle) => toggle.props.label === "Push to talk")?.props.onToggle as (next: unknown) => void)(false);
-		(toggles.find((toggle) => toggle.props.label === "Dark")?.props.onToggle as (next: unknown) => void)(true);
-		expect(requests).toEqual([
-			{ method: "plugins.setEnabled", params: { id: "push-to-talk", enabled: false } },
-			{ method: "themes.setEnabled", params: { id: "dark", enabled: true } },
-		]);
+		const pluginTree = setup(createFakeReact(), "bgb-plugins");
+		pluginTree.store.setBridgeState("connected");
+		const pluginToggle = pluginTree.render().find((element) => element.props?.className === "uspp-switch" && element.props["aria-label"] === "Push to talk");
+		(pluginToggle?.props.onClick as () => void)();
+		const themeTree = setup(createFakeReact(), "bgb-themes");
+		themeTree.store.setBridgeState("connected");
+		const themeToggle = themeTree.render().find((element) => element.props?.className === "uspp-switch" && element.props["aria-label"] === "Dark");
+		(themeToggle?.props.onClick as () => void)();
+		expect(pluginTree.requests).toEqual([{ method: "plugins.setEnabled", params: { id: "push-to-talk", enabled: false } }]);
+		expect(themeTree.requests).toEqual([{ method: "themes.setEnabled", params: { id: "dark", enabled: true } }]);
+		expect(requests).toEqual([]);
 	});
 });

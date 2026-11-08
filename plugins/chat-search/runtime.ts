@@ -244,18 +244,43 @@ function unavailableStatus(): HistoryStatus { return UNAVAILABLE_STATUS; }
 globalThis.BetterGrokBot?.define("chat-search", (ctx) => {
 	let open: (() => void) | null = null;
 	let preparedFinder: ((props: Record<string, unknown>) => unknown) | null = null;
-	const SearchButton: ComponentFactory = ({ jsx }) => () => jsx("button", {
-		className: "bgb-chat-search-button",
-		type: "button",
-		"aria-label": "Search this conversation",
-		title: "Search this conversation",
-		onClick: () => open?.(),
-		children: [jsx("svg", {
-			viewBox: "0 0 24 24", width: 16, height: 16, fill: "none", stroke: "currentColor", strokeWidth: 2,
-			"aria-hidden": true,
-			children: [jsx("circle", { cx: 10.5, cy: 10.5, r: 6.5 }), jsx("path", { d: "m16 16 5 5" })],
-		}), "Search"],
-	});
+	const SearchButton: ComponentFactory = ({ jsx }) => () => {
+		const native = document.querySelector<HTMLButtonElement>(
+			"button.sand-agents-sidebar__search, .sand-agents-sidebar__new-actions button[aria-label=\"Search\"]",
+		);
+		const kit = native?.querySelector(".sand-kit-icon");
+		const icon = native?.querySelector("i.cursor-icon, i[data-icon-name]");
+		const tokens = native instanceof HTMLElement
+			? String(native.className).split(/\s+/).filter((c) => c && c !== "sand-agents-sidebar__search" && !c.startsWith("bgb-"))
+			: [];
+		const className = [...tokens, "bgb-chat-search-button"].join(" ");
+		const iconSize =
+			icon instanceof HTMLElement ? icon.style.getPropertyValue("--icon-size") || "16px" : "16px";
+		const data = (name: string, fallback: string) =>
+			native instanceof HTMLElement ? (native.getAttribute(name) ?? fallback) : fallback;
+		return jsx("button", {
+			className,
+			type: "button",
+			"data-variant": data("data-variant", "secondary"),
+			"data-size": data("data-size", "sm"),
+			"data-sentiment": data("data-sentiment", "neutral"),
+			"data-surface": data("data-surface", "island"),
+			"aria-label": "Search this conversation",
+			title: "Search this conversation",
+			onClick: () => open?.(),
+			children: jsx("span", {
+				"aria-hidden": true,
+				className: kit ? String(kit.className) : "sand-kit-icon",
+				"data-size": kit?.getAttribute("data-size") ?? "sm",
+				children: jsx("i", {
+					className: icon ? String(icon.className) : "ui-icon cursor-icon",
+					"data-icon-name": "search",
+					"aria-hidden": true,
+					style: { "--cursor-icon-content": `"\uEA6D"`, "--icon-size": iconSize },
+				}),
+			}),
+		});
+	};
 	return {
 		captureOpen(callback: unknown) {
 			if (typeof callback === "function") open = callback as () => void;

@@ -12,8 +12,18 @@ import {
 	type UiPrimitives,
 } from "../../sdk/index.ts";
 import { describeError } from "../logger.ts";
+import { jsxFromReact } from "../boundary.ts";
 import type { LoaderStore } from "../store.ts";
 import { createH } from "./h.ts";
+import {
+	filterPlugins,
+	injectCardsCss,
+	renderPluginGrid,
+	renderPluginModal,
+	renderSwitch,
+	wrapSettingsPane,
+} from "./cards.ts";
+import { BGB_PLUGINS_TAB, BGB_SETTINGS_TAB, BGB_THEMES_TAB } from "./shell.ts";
 import {
 	buildPluginRows,
 	buildThemeRows,
@@ -60,15 +70,49 @@ function inputValue(event: unknown): string | undefined {
 /** The `bgb-settings` hook validated `ui` before rendering the section. */
 export interface SectionProps {
 	ui: UiPrimitives;
+	tab?: string;
+}
+
+/** Custom settings components previously injected into Settings → General → System. */
+const EXTRA_SETTINGS: Record<string, string> = {
+	"output-device": "SpeakerRow",
+	"push-to-talk": "SettingsRows",
+	"startup": "SettingsRows",
+	"voice-keepalive": "SettingsRow",
+	"voice-mcp": "SettingsRow",
+};
+
+function readIdList(key: string): string[] {
+	try {
+		const raw = globalThis.localStorage?.getItem(key);
+		const parsed: unknown = raw === null || raw === undefined ? [] : JSON.parse(raw);
+		return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
+	} catch {
+		return [];
+	}
+}
+
+function writeIdList(key: string, ids: readonly string[]): void {
+	try {
+		globalThis.localStorage?.setItem(key, JSON.stringify(ids));
+	} catch {
+		/* quota / private mode */
+	}
+}
+
+function toggleId(list: readonly string[], id: string, front: boolean): string[] {
+	if (list.includes(id)) return list.filter((item) => item !== id);
+	return front ? [id, ...list] : [...list, id];
 }
 
 /**
- * Builds the "Better Grok Bot" section of Settings → General from the app's React and its own
+ * Builds the "Better Grok Bot" pane of Settings from the app's React and its own
  * settings primitives (`ui.Section/Row/Toggle/Select/Button`). With the agent disconnected every
  * control is disabled except "Reload to apply", which reloads locally.
  */
 export function createBgbSection(React: ReactLike, deps: SectionDeps): (props: SectionProps) => unknown {
 	const h = createH(React);
+	const jsx = jsxFromReact(React);
 	const { store, manifest } = deps;
 
 	/** Runs a user action: its controls stay disabled meanwhile; a failure or a returned message shows in the status row. */
@@ -247,8 +291,15 @@ export function createBgbSection(React: ReactLike, deps: SectionDeps): (props: S
 		);
 	}
 
-	return function BgbSection({ ui }: SectionProps): unknown {
+	return function BgbSection({ ui, tab = BGB_SETTINGS_TAB.id }: SectionProps): unknown {
+		React.useEffect(() => injectCardsCss(globalThis.document), []);
 		const snapshot = React.useSyncExternalStore(store.subscribe, store.getSnapshot);
+		const [openKey, setOpenKey] = React.useState<string | null>(null);
+		const [query, setQuery] = React.useState("");
+		const [cat, setCat] = React.useState<"favorites" | "all">("all");
+		const [filter, setFilter] = React.useState<"all" | "enabled" | "disabled">("all");
+		const [starred, setStarred] = React.useState<string[]>(() => readIdList("bgb:starred-plugins"));
+		const [pinned, setPinned] = React.useState<string[]>(() => readIdList("bgb:pinned-plugins"));
 		const offline = snapshot.bridge !== "connected";
 		const busy = (action: string): boolean => offline || snapshot.busy.includes(action);
 		const status = snapshot.status;
@@ -285,29 +336,23 @@ export function createBgbSection(React: ReactLike, deps: SectionDeps): (props: S
 				),
 			);
 
-		const pluginRows = buildPluginRows(status?.plugins ?? null, manifest.plugins, deps.localStatus()).flatMap((plugin) => [
-			row(
-				ui,
-				`plugin:${plugin.key}`,
-				plugin.label,
-				plugin.description,
-				group(
-					plugin.community &&
-						button(ui, "update", "Update", busy(`update:${plugin.id}`), () => run(`update:${plugin.id}`, () => updatePlugin(plugin))),
-					plugin.community &&
-						button(ui, "uninstall", "Uninstall", busy(`uninstall:${plugin.id}`), () => {
-							if (!deps.confirm(`Uninstall ${plugin.name}?`)) return;
-							run(`uninstall:${plugin.id}`, async () => {
-								await deps.request("plugins.uninstall", { id: plugin.id });
-								return `Uninstalled ${plugin.name}`;
-							});
-						}),
-					toggle(ui, plugin.name, plugin.enabled, busy(`toggle:${plugin.id}`) || !plugin.canToggle, (enabled) =>
-						run(`toggle:${plugin.id}`, () => deps.request("plugins.setEnabled", { id: plugin.id, enabled }).then(() => undefined)),
-					),
-				),
-			),
-			...plugin.fields.map(({ name, field }) =>
+		const plugins = buildPluginRows(status?.plugins ?? null, manifest.plugins, deps.localStatus());
+		const extraFor = (plugin: PluginRowModel): unknown => {
+			const name = EXTRA_SETTINGS[plugin.id];
+			if (!plugin.enabled || name === undefined) return false;
+			const Extra = globalThis.BetterGrokBot?.component(plugin.id, name, {
+				React,
+				jsx,
+				Row: ui.Row,
+				Toggle: ui.Toggle,
+				Select: ui.Select,
+				Button: ui.Button,
+				buttonTextStyle: ui.textStyles.body2,
+			});
+			return Extra != null && h(Extra, { key: `extra:${plugin.id}` });
+		};
+		const fieldsFor = (plugin: PluginRowModel): unknown[] =>
+			Object.entries(plugin.settings).map(([name, field]) =>
 				h(SettingRow, {
 					key: `setting:${plugin.id}:${name}`,
 					ui,
@@ -316,39 +361,198 @@ export function createBgbSection(React: ReactLike, deps: SectionDeps): (props: S
 					field,
 					disabled: offline,
 				}),
-			),
-		]);
-
-		const themeRows = buildThemeRows(status?.themes ?? null, manifest.themes).map((theme) =>
-			row(
-				ui,
-				`theme:${theme.id}`,
-				theme.label,
-				theme.description,
-				toggle(ui, theme.label, theme.enabled, busy(`theme:${theme.id}`) || !theme.valid, (enabled) =>
-					run(`theme:${theme.id}`, () => deps.request("themes.setEnabled", { id: theme.id, enabled }).then(() => undefined)),
+			);
+		const cardHandlers = {
+			ui,
+			extra: EXTRA_SETTINGS,
+			offline,
+			busy,
+			toggle,
+			button,
+			onToggle: (plugin: PluginRowModel, enabled: boolean) => {
+				run(`toggle:${plugin.id}`, () => deps.request("plugins.setEnabled", { id: plugin.id, enabled }).then(() => undefined));
+			},
+			onUpdate: (plugin: PluginRowModel) => {
+				run(`update:${plugin.id}`, () => updatePlugin(plugin));
+			},
+			onUninstall: (plugin: PluginRowModel) => {
+				if (!deps.confirm(`Uninstall ${plugin.name}?`)) return;
+				run(`uninstall:${plugin.id}`, async () => {
+					await deps.request("plugins.uninstall", { id: plugin.id });
+					return `Uninstalled ${plugin.name}`;
+				});
+			},
+			onConfigure: (plugin: PluginRowModel) => setOpenKey(plugin.key),
+			starred,
+			pinned,
+			onStar: (plugin: PluginRowModel) => {
+				const next = toggleId(starred, plugin.id, false);
+				setStarred(next);
+				writeIdList("bgb:starred-plugins", next);
+			},
+			onPin: (plugin: PluginRowModel) => {
+				const next = toggleId(pinned, plugin.id, true);
+				setPinned(next);
+				writeIdList("bgb:pinned-plugins", next);
+			},
+		};
+		const open = plugins.find((plugin) => plugin.key === openKey);
+		let visible = filterPlugins(plugins, query, filter);
+		if (cat === "favorites") visible = visible.filter((plugin) => starred.includes(plugin.id));
+		if (cat === "all" || cat === "favorites") {
+			const pinnedVisible = pinned.map((id) => visible.find((plugin) => plugin.id === id)).filter((plugin): plugin is PluginRowModel => plugin !== undefined);
+			const rest = visible.filter((plugin) => !pinned.includes(plugin.id));
+			visible = [...pinnedVisible, ...rest];
+		}
+		const pluginPane = h(
+			"div",
+			{ className: "uspp-page", "data-uspp-page": "plugins" },
+			renderPluginGrid(h, visible, cardHandlers),
+			open !== undefined &&
+				renderPluginModal(h, open, {
+					ui,
+					button,
+					toggle,
+					busy,
+					onToggle: cardHandlers.onToggle,
+					onUpdate: cardHandlers.onUpdate,
+					onUninstall: cardHandlers.onUninstall,
+					onReset: () => {
+						const settings = deps.settingsFor(open.id, open.settings);
+						for (const { name, field } of open.fields) settings.set(name, field.default);
+					},
+					fields: fieldsFor(open),
+					extra: extraFor(open),
+					onClose: () => setOpenKey(null),
+				}),
+		);
+		const pluginSticky = h(
+			"div",
+			{ className: "uspp-sticky-inner" },
+			h(
+				"div",
+				{ className: "uspp-tabs", role: "tablist" },
+				...(
+					[
+						["favorites", "Favorites"],
+						["all", "All"],
+					] as const
+				).map(([id, label]) =>
+					h(
+						"button",
+						{
+							key: id,
+							type: "button",
+							role: "tab",
+							className: "uspp-chip",
+							"aria-selected": String(cat === id),
+							onClick: () => setCat(id),
+						},
+						label,
+					),
 				),
+			),
+			h(
+				"div",
+				{ className: "uspp-toolbar" },
+				h("input", {
+					type: "search",
+					className: "uspp-input",
+					placeholder: `Search ${plugins.length} plugins...`,
+					value: query,
+					"aria-label": "Search plugins",
+					onChange: (event: unknown) => {
+						const text = inputValue(event);
+						if (text !== undefined) setQuery(text);
+					},
+				}),
+				h(
+					"select",
+					{
+						className: "uspp-select",
+						"aria-label": "Filter",
+						value: filter,
+						onChange: (event: unknown) => {
+							const target = typeof event === "object" && event !== null ? Reflect.get(event, "currentTarget") : undefined;
+							if (target instanceof HTMLSelectElement && (target.value === "all" || target.value === "enabled" || target.value === "disabled")) {
+								setFilter(target.value);
+							}
+						},
+					},
+					h("option", { value: "all" }, "All"),
+					h("option", { value: "enabled" }, "Enabled"),
+					h("option", { value: "disabled" }, "Disabled"),
+				),
+			),
+		);
+
+		const themeCards = buildThemeRows(status?.themes ?? null, manifest.themes).map((theme) =>
+			h(
+				"div",
+				{ className: "uspp-card", "data-bgb-theme": theme.id, key: theme.id },
+				h(
+					"div",
+					{ className: "uspp-card-head" },
+					h("span", { className: "uspp-card-name" }, theme.label),
+					h(
+						"div",
+						{ className: "uspp-card-controls" },
+						renderSwitch(h, {
+							checked: theme.enabled,
+							disabled: busy(`theme:${theme.id}`) || !theme.valid,
+							label: theme.label,
+							onChange: (enabled) =>
+								run(`theme:${theme.id}`, () => deps.request("themes.setEnabled", { id: theme.id, enabled }).then(() => undefined)),
+						}),
+					),
+				),
+				h("div", { className: "uspp-card-desc" }, theme.description),
 			),
 		);
 
 		const openFolder = (target: "plugins" | "themes" | "logs", label: string): unknown =>
 			button(ui, target, label, busy("open"), () => run("open", () => deps.request("system.openPath", { target }).then(() => undefined)));
 
-		return h(
-			ui.Section,
-			{ title: "Better Grok Bot" },
-			statusRow,
-			settingRow("openAtLogin", "Open Grok Bot at login", "Starts Grok Bot when you log in to this computer."),
-			settingRow("autoUpdate", "Install Better Grok Bot updates automatically", "Checks for new versions every few hours."),
-			...pluginRows,
-			h(InstallRow, { key: "install", ui, disabled: offline }),
-			...themeRows,
-			row(
-				ui,
-				"folders",
-				"Open folder",
-				"Add theme files to the themes folder; logs help when something breaks.",
-				group(openFolder("plugins", "Plugins"), openFolder("themes", "Themes"), openFolder("logs", "Logs")),
+		if (tab === BGB_PLUGINS_TAB.id) {
+			return wrapSettingsPane(h, pluginPane, pluginSticky);
+		}
+		if (tab === BGB_THEMES_TAB.id) {
+			return wrapSettingsPane(
+				h,
+				h(
+					"div",
+					{ className: "uspp-page", "data-uspp-page": "themes" },
+					h(
+						"div",
+						{ className: "uspp-toolbar" },
+						h(
+							"button",
+							{ type: "button", className: "uspp-btn", disabled: busy("open"), onClick: () => run("open", () => deps.request("system.openPath", { target: "themes" }).then(() => undefined)) },
+							"Open themes folder",
+						),
+					),
+					themeCards.length > 0
+						? h("div", { className: "uspp-grid" }, ...themeCards)
+						: h("div", { className: "uspp-empty" }, "No themes installed."),
+				),
+			);
+		}
+		return wrapSettingsPane(
+			h,
+			h(
+				ui.Section,
+				{ title: "Better Grok Bot" },
+				statusRow,
+				settingRow("openAtLogin", "Open Grok Bot at login", "Starts Grok Bot when you log in to this computer."),
+				settingRow("autoUpdate", "Install Better Grok Bot updates automatically", "Checks for new versions every few hours."),
+				h(InstallRow, { key: "install", ui, disabled: offline }),
+				row(
+					ui,
+					"folders",
+					"Open folder",
+					"Add theme files to the themes folder; logs help when something breaks.",
+					group(openFolder("plugins", "Plugins"), openFolder("themes", "Themes"), openFolder("logs", "Logs")),
+				),
 			),
 		);
 	};

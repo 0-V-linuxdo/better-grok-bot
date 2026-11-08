@@ -125,7 +125,7 @@ test("function replacers receive groups, named groups, offset, text and file", a
 	]);
 });
 
-test("the bgb-settings core hook's function replacer works through PatchMatch", async () => {
+test("the bgb-settings core hook captures UI primitives without appending a General section", async () => {
 	const chunk = [
 		"const id=`sand-settings-general`;",
 		"function G(){",
@@ -134,15 +134,31 @@ test("the bgb-settings core hook's function replacer works through PatchMatch", 
 		"(0,a.jsx)(bt,{isChecked:i,isDisabled:d,label:l,onToggle:o,size:`md`});",
 		'(0,a.jsx)(ce,{"aria-label":q,disabled:w,onValueChange:v,options:p,placement:`bottom-end`,size:`lg`,value:z});',
 		"(0,a.jsx)(q,{onClick:k,size:`md`,style:T.body2,type:`button`,variant:`secondary`});",
+		"c=He(`sand-settings-general`,{className:`sand-9f619`}.className),e[2]=c",
 		"return (0,a.jsxs)(`div`,{className:n,children:[d,o,r]})",
 		"}",
 	].join("");
-	const ws = await workspace({ "assets/chunk-general-pane-abc123.js": chunk, "assets/chunk-view-other.js": "nothing here" });
+	const layout = [
+		"children:l._(e.label)",
+		"Oe=l._(r.label)",
+		"A=(0,E.jsx)(_e,{activeSection:w,boxActionError:r.boxActionError,navFooter:O,onClose:k,onSelectSection:D,presentation:r.presentation,sections:f,children:ne})",
+	].join(";");
+	const ws = await workspace({
+		"assets/chunk-general-pane-abc123.js": chunk,
+		"assets/chunk-layout-abc123.js": layout,
+		"assets/chunk-view-other.js": "nothing here",
+	});
 	const attempt = await ws.attempt(settingsHook.patches ?? []);
 	expect(attempt.errors).toEqual([]);
 	expect(attempt.edits.get("assets/chunk-general-pane-abc123.js")).toContain(
-		'children:[d,o,r,globalThis.BetterGrokBot?.settingsSection({Section:fn,Row:X,Toggle:bt,Select:ce,Button:q,textStyles:T})??null]})}',
+		"c=(globalThis.BetterGrokBot?.settingsSection({Section:fn,Row:X,Toggle:bt,Select:ce,Button:q,textStyles:T}),He(`sand-settings-general`,{className:`sand-9f619`}.className)",
 	);
+	expect(attempt.edits.get("assets/chunk-general-pane-abc123.js")).not.toContain("children:[d,o,r,globalThis.BetterGrokBot");
+	expect(attempt.edits.get("assets/chunk-layout-abc123.js")).toContain(
+		"BetterGrokBot?.settingsShell({jsx:E.jsx,Layout:_e,activeSection:w,boxActionError:r.boxActionError,navFooter:O,onClose:k,onSelectSection:D,presentation:r.presentation,sections:f,children:ne})",
+	);
+	expect(attempt.edits.get("assets/chunk-layout-abc123.js")).toContain("typeof e.label==`string`?e.label:l._(e.label)");
+	expect(attempt.edits.get("assets/chunk-layout-abc123.js")).toContain("typeof r.label==`string`?r.label:l._(r.label)");
 });
 
 test("an isolated plugin may not select index.html or assets/bgb", async () => {

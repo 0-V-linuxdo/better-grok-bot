@@ -5,7 +5,7 @@ A Better Grok Bot plugin changes Grok Bot's web UI (its renderer). It can:
 - **patch** the app's JavaScript with exact-count regex replacements at build time,
 - run **renderer JavaScript** (`runtime`) that the patched code calls into,
 - add **CSS** (`styles`),
-- declare **settings** that Better Grok Bot stores and shows in Settings → General → Better Grok Bot,
+- declare **settings** that Better Grok Bot stores and shows in Settings → Better Grok Bot,
 - use Better Grok Bot **services** (`keys`, `media`, `mcp`) for host capabilities, after the user grants them.
 
 Better Grok Bot never modifies the installed app. Each build copies the app's renderer into the Better Grok
@@ -13,7 +13,7 @@ Bot data folder, applies the patches of every enabled plugin, injects the loader
 Grok Bot load that private copy at its next start. When Grok Bot updates, Better Grok Bot rebuilds; a plugin
 whose patches no longer match is turned off for that app version (`patch-failed`) and the rest keep working.
 
-The bundled plugins in [`plugins/`](../plugins) (`bot-instructions`, `chat-search`, `output-device`, `push-to-talk`, `sidebar-folders`,
+The bundled plugins in [`plugins/`](../plugins) (`bot-instructions`, `chat-search`, `connect-apps`, `output-device`, `push-to-talk`, `sidebar-collapse`, `sidebar-folders`,
 `startup`, `voice-dock`, `voice-keepalive`, `voice-mcp`, `weekly-usage`) are examples of the patterns below.
 
 ## Anatomy
@@ -210,8 +210,7 @@ messages where the app names itself, and a label at the top of the agents sideba
 
 ## Settings
 
-Declare settings and Better Grok Bot stores, validates and shows them: while your plugin is active, its row
-in Settings → General → Better Grok Bot is followed by one row per field.
+Declare settings and Better Grok Bot stores, validates and shows them: while your plugin is active, Settings → Better Grok Bot lists it as a native settings **row** (label, description, toggle). Click **Configure** for its fields (and any extra settings component) as more native rows, with Back.
 
 ```ts
 settings: {
@@ -318,7 +317,7 @@ Full configurations (including secrets) are shared host-wide in `DATA/mcp.json`,
 Connecting may launch a host command or contact a remote server even while disabled. Enabling trusts tools
 to act with the user's authority without per-call prompts.
 
-The bundled Voice MCP plugin exposes these settings at **Settings → General → System → Voice MCP servers**:
+The bundled Voice MCP plugin exposes these settings at **Settings → Better Grok Bot → Voice MCP servers**:
 add a named server, enter JSON args/env (stdio) or JSON headers (HTTP/SSE), save disabled, test, then explicitly
 enable and manually rejoin/start voice. It changes voice only, not normal text chat. Tool schemas and results
 go to the voice model, and voice remains remotely processed.
@@ -388,7 +387,7 @@ bgb plugins install github:you/hello-greeting          # latest release
 bgb plugins install github:you/hello-greeting@v1.0.0   # a specific tag
 ```
 
-or by pasting `github:you/hello-greeting` into Settings → General → Better Grok Bot → Install plugin. A
+or by pasting `github:you/hello-greeting` into Settings → Better Grok Bot → Install plugin. A
 plugin can also be installed from a folder, a `.bgbplugin`/`.zip` file or an `https://` URL of a package (at
 most 20 MB). Better Grok Bot shows the requested permissions before installing, remembers the source, and
 `bgb plugins update <id>` (or the plugin's Update button) installs a newer release from it, asking again only

@@ -1,16 +1,14 @@
 import { definePlugin } from "@better-grok-bot/sdk";
-import { SYSTEM_CHILDREN_FIND, injectAfterMicrophone } from "../settings-inject.ts";
 
 const APP_CHUNK = /^assets\/index\.eager-app-[\w-]+\.js$/;
 const ENTRY_CHUNK = /^assets\/index\.eager-app-[\w-]+\.js$/;
-const SETTINGS_VIEW_CHUNK = /^assets\/chunk-(?:view|general-pane)-[\w-]+\.js$/;
 
 export default definePlugin({
 	id: "push-to-talk",
 	name: "Push to Talk",
 	description:
-		"Hold a key (or the call's talk button) to speak in voice mode, even with Grok Bot in the background via the optional key helper; letting go ends your turn so Grok answers right away. With the key helper, music players get quieter while Grok speaks (default 20%) and while you talk (default 0%) (Settings → General → System → Push to talk).",
-	version: "0.5.0",
+		"Hold a key (or the call's talk button) to speak in voice mode, even with Grok Bot in the background via the optional key helper; letting go ends your turn so Grok answers right away. With the key helper, music players get quieter while Grok speaks (default 20%) and while you talk (default 0%) (Settings → Better Grok Bot → Push to talk).",
+	version: "0.5.2",
 	apiVersion: 1,
 	permissions: ["keys", "media"],
 	runtime: "runtime.ts",
@@ -64,15 +62,6 @@ export default definePlugin({
 			find: /(=\(0,(\i)\.useState\)\(`closed`\),\[\i,\i\]=\(0,\2\.useState\)\(`transcript`\)[^]*?)(\(0,(\i)\.jsx\)\((\i),\{content:(\i),children:\(0,\4\.jsx\)\((\i),\{"aria-label":\6,"aria-pressed":(\i)\.isMuted,icon:[^]*?(\i)\.controlPressed[^]*?variant:`secondary`\}\)\}\))/,
 			replace:
 				'$1globalThis.BetterGrokBot?$4.jsx(globalThis.BetterGrokBot.component("push-to-talk","CallButton",{React:$2,jsx:$4.jsx,Tooltip:$5,IconButton:$7,pressedStyle:$9.controlPressed}),{}):null,$3',
-		},
-		{
-			// Settings → General → System: the push-to-talk rows right after the Microphone row
-			// (and the output-device Speaker row, which renders inside it). Row, Button, and Toggle
-			// come from the Microphone and Hardware Acceleration rows that sit between.
-			id: "settings-rows",
-			file: SETTINGS_VIEW_CHUNK,
-			find: SYSTEM_CHILDREN_FIND,
-			replace: injectAfterMicrophone("push-to-talk", "SettingsRows", (p) => ({React:p.react,Row:p.row,Toggle:p.toggle,Button:p.button,buttonTextStyle:p.textStyles.body2})),
 		},
 	],
 });

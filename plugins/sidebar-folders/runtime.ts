@@ -8,7 +8,8 @@
  * (`localStorage`, key `bgb:sidebar-folders:sections`) answers, so folders always work and survive restarts.
  *
  * Ordering: each section's `agentIds` array is the order; `orderSectionAgents` applies it for display and
- * `dropAgent` rewrites it on a drop. `New folder` is also offered when right-clicking empty sidebar space.
+ * `dropAgent` rewrites it on a drop. A visible **New folder** icon sits in the sidebar header next to Search; right-clicking
+ * empty sidebar space (including a folder's empty body) also offers New folder.
  */
 import { SidebarError, parseSidebarCommand, type PluginContext, type SidebarBot, type SidebarCommand, type SidebarFolder, type SidebarResult } from "@better-grok-bot/sdk";
 
@@ -56,9 +57,23 @@ export function placeAgent(
 	beforeId: string | null,
 	afterId: string | null,
 ): Section[] | null {
+	return placeAgents(sections, [agentId], sectionId, beforeId, afterId);
+}
+
+/** Like {@link placeAgent}, for several bots as one contiguous block (sidebar multi-select drag). */
+export function placeAgents(
+	sections: readonly Section[],
+	agentIds: readonly string[],
+	sectionId: string,
+	beforeId: string | null,
+	afterId: string | null,
+): Section[] | null {
 	if (!sections.some((section) => section.id === sectionId)) return null;
+	const moving = [...new Set(agentIds.filter((id) => id.length > 0))];
+	if (moving.length === 0) return [...sections];
+	const skip = new Set(moving);
 	return sections.map((section) => {
-		const rest = section.agentIds.filter((id) => id !== agentId);
+		const rest = section.agentIds.filter((id) => !skip.has(id));
 		if (section.id !== sectionId) return rest.length === section.agentIds.length ? section : { ...section, agentIds: rest };
 		let at = beforeId === null ? -1 : rest.indexOf(beforeId);
 		if (at < 0 && afterId !== null) {
@@ -66,7 +81,7 @@ export function placeAgent(
 			if (after >= 0) at = after + 1;
 		}
 		if (at < 0) at = rest.length;
-		return { ...section, agentIds: [...rest.slice(0, at), agentId, ...rest.slice(at)] };
+		return { ...section, agentIds: [...rest.slice(0, at), ...moving, ...rest.slice(at)] };
 	});
 }
 
@@ -125,7 +140,7 @@ function sectionsStore(client: unknown): SectionsStore | undefined {
 	return store as SectionsStore;
 }
 
-function sectionRows(sectionId: string, draggedId: string): { rows: Row[]; box: DOMRect | null } {
+function sectionRows(sectionId: string, excludeIds: ReadonlySet<string>): { rows: Row[]; box: DOMRect | null } {
 	const selector = `div[data-section-id="${CSS.escape(sectionId)}"]`;
 	const container = document.querySelector(selector);
 	if (container === null) return { rows: [], box: null };
@@ -133,7 +148,7 @@ function sectionRows(sectionId: string, draggedId: string): { rows: Row[]; box: 
 	const rows: Row[] = [];
 	for (const button of container.querySelectorAll<HTMLElement>("button[data-agent-id]")) {
 		const id = button.dataset.agentId;
-		if (id === undefined || id === draggedId || seen.has(id)) continue;
+		if (id === undefined || excludeIds.has(id) || seen.has(id)) continue;
 		seen.add(id);
 		const rect = button.getBoundingClientRect();
 		if (rect.height === 0) continue;
@@ -141,6 +156,20 @@ function sectionRows(sectionId: string, draggedId: string): { rows: Row[]; box: 
 	}
 	rows.sort((a, b) => a.top - b.top);
 	return { rows, box: container.getBoundingClientRect() };
+}
+
+/** Sidebar bots with `data-selected` (native multi-select). If the dragged bot is among them, the whole set moves. */
+export function selectedSidebarAgentIds(draggedId: string, root: ParentNode = document): string[] {
+	const selected: string[] = [];
+	const seen = new Set<string>();
+	for (const button of root.querySelectorAll("aside.sand-agents-sidebar button[data-agent-id][data-selected]")) {
+		const id = button.getAttribute("data-agent-id");
+		if (id === null || id.length === 0 || seen.has(id)) continue;
+		seen.add(id);
+		selected.push(id);
+	}
+	if (selected.includes(draggedId) && selected.length > 1) return selected;
+	return [draggedId];
 }
 
 function isThenable(value: unknown): value is PromiseLike<unknown> {
@@ -237,11 +266,63 @@ export type SidebarFoldersRuntime = {
 /** The sidebar `<aside>` holding `target`, when `target` is empty sidebar space (not a row, button or field). */
 export function emptySidebarSpace(target: EventTarget | null): Element | null {
 	if (!(target instanceof Element)) return null;
-	if (target.closest("button, a, input, textarea, select, [role='menu'], [role='menuitem'], [data-section-id], [contenteditable='true']") !== null)
-		return null;
-	const aside = target.closest("aside");
+	if (target.closest("button, a, input, textarea, select, [role='menu'], [role='menuitem'], [contenteditable='true']") !== null) return null;
+	if (target.closest(".sand-agents-section__header, [data-agent-id], [data-testid='pinned-agents']") !== null) return null;
+	const aside = target.closest("aside.sand-agents-sidebar") ?? target.closest("aside");
 	if (aside === null || aside.querySelector("button[data-agent-id]") === null) return null;
 	return aside;
+}
+
+export const NEW_FOLDER_BUTTON_CLASS = "bgb-sidebar-folders__new";
+const FOLDER_PLUS_GLYPH = "\uEA80";
+
+/** Icon-only New folder in the sidebar header actions, matching Search / New Bot. */
+export function insertNewFolderButton(aside: Element, onCreate: () => void): HTMLButtonElement {
+	const actions = aside.querySelector(".sand-agents-sidebar__new-actions, .sand-agents-sidebar__rail-actions");
+	const header = aside.querySelector(":scope > .sand-agents-sidebar__header");
+	const host = actions ?? header ?? aside;
+	const existing = aside.querySelector(`.${NEW_FOLDER_BUTTON_CLASS}`);
+	if (
+		existing instanceof HTMLButtonElement &&
+		host.contains(existing) &&
+		existing.getAttribute("aria-label") === "New folder" &&
+		!(existing.textContent ?? "").includes("New folder")
+	) {
+		return existing;
+	}
+	existing?.remove();
+	const document = aside.ownerDocument;
+	const template = host.querySelector<HTMLButtonElement>(
+		"button.sand-kit-icon-button, button[aria-label='Search'], button[aria-label='New Bot']",
+	);
+	const button = template !== null ? (template.cloneNode(true) as HTMLButtonElement) : document.createElement("button");
+	button.type = "button";
+	button.classList.add(NEW_FOLDER_BUTTON_CLASS);
+	button.setAttribute("aria-label", "New folder");
+	button.title = "New folder";
+	button.removeAttribute("id");
+	button.removeAttribute("data-base-ui-tooltip-trigger");
+	button.removeAttribute("aria-expanded");
+	button.removeAttribute("aria-haspopup");
+	for (const node of [...button.childNodes]) {
+		if (node.nodeType === 3 && (node.textContent ?? "").trim() !== "") node.remove();
+	}
+	let icon = button.querySelector<HTMLElement>("i.cursor-icon, i[data-icon-name]");
+	if (icon === null) {
+		icon = document.createElement("i");
+		icon.className = "ui-icon cursor-icon";
+		icon.setAttribute("aria-hidden", "true");
+		const kit = button.querySelector(".sand-kit-icon") ?? button;
+		kit.replaceChildren(icon);
+	}
+	icon.setAttribute("data-icon-name", "folder-plus");
+	icon.style.setProperty("--cursor-icon-content", `"${FOLDER_PLUS_GLYPH}"`);
+	if (icon.style.getPropertyValue("--icon-size") === "") icon.style.setProperty("--icon-size", "16px");
+	button.addEventListener("click", onCreate);
+	const search = host.querySelector("button[aria-label='Search']");
+	if (search !== null && search !== button) search.before(button);
+	else host.prepend(button);
+	return button;
 }
 
 export function createSidebarFolders(ctx: PluginContext): SidebarFoldersRuntime {
@@ -271,9 +352,8 @@ export function createSidebarFolders(ctx: PluginContext): SidebarFoldersRuntime 
 				return sections;
 			},
 			(error: unknown) => {
-				const saved = parseSections(local());
-				if (saved === null || hostStores) throw error;
-				return saved;
+				if (hostStores) throw error;
+				return parseSections(local()) ?? [];
 			},
 		);
 	};
@@ -546,6 +626,18 @@ export function createSidebarFolders(ctx: PluginContext): SidebarFoldersRuntime 
 			ctx.log.warn("could not create a folder", error);
 		}
 	};
+	const mountNewFolder = (): void => {
+		const root = globalThis.document;
+		if (root === undefined) return;
+		const aside = root.querySelector("aside.sand-agents-sidebar");
+		if (aside === null) return;
+		insertNewFolderButton(aside, createFolder);
+	};
+	mountNewFolder();
+	const root = globalThis.document;
+	if (root?.documentElement != null) {
+		new MutationObserver(mountNewFolder).observe(root.documentElement, { childList: true, subtree: true });
+	}
 	const openMenu = (x: number, y: number): void => {
 		closeMenu();
 		const element = document.createElement("div");
@@ -590,7 +682,7 @@ export function createSidebarFolders(ctx: PluginContext): SidebarFoldersRuntime 
 
 	const drawLine = (): void => {
 		if (drag === null || pointerY === null) return hideLine();
-		const { rows, box } = sectionRows(drag.sectionId, drag.agentId);
+		const { rows, box } = sectionRows(drag.sectionId, new Set(selectedSidebarAgentIds(drag.agentId)));
 		const { lineY } = slotAt(rows, pointerY);
 		if (box === null || lineY === null) return hideLine();
 		if (line === null) {
@@ -636,7 +728,11 @@ export function createSidebarFolders(ctx: PluginContext): SidebarFoldersRuntime 
 		const a = active as DragTarget | null | undefined;
 		const o = over as DragTarget | null | undefined;
 		const inFolder =
-			a?.kind === "agent" && typeof a.id === "string" && o?.kind === "section-body" && typeof o.id === "string" && o.id !== UNSECTIONED_ID;
+			a?.kind === "agent" &&
+			typeof a.id === "string" &&
+			(o?.kind === "section-body" || o?.kind === "section") &&
+			typeof o.id === "string" &&
+			o.id !== UNSECTIONED_ID;
 		if (!inFolder) {
 			drag = null;
 			hideLine();
@@ -653,18 +749,19 @@ export function createSidebarFolders(ctx: PluginContext): SidebarFoldersRuntime 
 		drawLine();
 	};
 
-	/** Drop of bot `agentId` on section `sectionId`; true when handled, undefined to let the app append it. */
+	/** Drop of bot `agentId` (and any multi-selection it belongs to) on section `sectionId`. */
 	const dropAgent = (agentId: unknown, sectionId: unknown): true | undefined => {
 		const y = pointerY;
 		stop();
-		if (typeof agentId !== "string" || typeof sectionId !== "string" || sectionId === UNSECTIONED_ID || y === null) return undefined;
+		if (typeof agentId !== "string" || typeof sectionId !== "string" || sectionId === UNSECTIONED_ID) return undefined;
 		const store = sectionsStore(ctx.app.client);
 		const current = store?.sections.get();
 		if (store === undefined || current == null) return undefined;
-		const { beforeId, afterId } = slotAt(sectionRows(sectionId, agentId).rows, y);
-		if (placeAgent(current, agentId, sectionId, beforeId, afterId) === null) return undefined;
+		const ids = selectedSidebarAgentIds(agentId);
+		const slot = y === null ? { beforeId: null, afterId: null } : slotAt(sectionRows(sectionId, new Set(ids)).rows, y);
+		if (placeAgents(current, ids, sectionId, slot.beforeId, slot.afterId) === null) return undefined;
 		try {
-			store.edit((sections) => placeAgent(sections, agentId, sectionId, beforeId, afterId) ?? sections);
+			store.edit((sections) => placeAgents(sections, ids, sectionId, slot.beforeId, slot.afterId) ?? sections);
 		} catch (error) {
 			ctx.log.warn("could not reorder the section", error);
 			return undefined;

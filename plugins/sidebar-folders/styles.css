@@ -120,7 +120,7 @@
 	height: 2px;
 	margin-top: -1px;
 	border-radius: var(--cursor-radius-full, 9999px);
-	background: var(--bgb-brand-gradient);
+	background: var(--cursor-text-primary, #f5f5f7);
 	pointer-events: none;
 }
 
@@ -128,7 +128,7 @@
 .sand-agents-section__drop-line {
 	height: 2px !important;
 	border-radius: var(--cursor-radius-full, 9999px);
-	background: var(--bgb-brand-gradient) !important;
+	background: var(--cursor-text-primary, #f5f5f7) !important;
 }
 
 /* "New folder" menu on empty sidebar space, built from the app's menu tokens to match its context menus. */
@@ -166,4 +166,9 @@
 .bgb-sidebar-folders__menu-item:hover,
 .bgb-sidebar-folders__menu-item:focus-visible {
 	background-color: var(--cursor-bg-tertiary);
+}
+
+/* New folder is an icon-only clone of Search / New Bot in the header. Hide any leftover text row. */
+aside.sand-agents-sidebar > .bgb-sidebar-folders__new {
+	display: none !important;
 }

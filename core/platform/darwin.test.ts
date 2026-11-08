@@ -7,9 +7,11 @@ import { makeFixtureAsar } from "../test/fixtures.ts";
 import type { CommandResult, CommandRunner } from "./common.ts";
 import {
 	AGENT_LABEL,
+	HOOK_LABEL,
 	LOGIN_LABEL,
 	agentPlist,
 	createDarwinAdapter,
+	hookPlist,
 	launchAgentPath,
 	loginPlist,
 	parsePsMainPid,
@@ -121,8 +123,15 @@ describe("plists", () => {
 		const login = loginPlist(bin, paths);
 		expect(login).toContain(`<string>${LOGIN_LABEL}</string>`);
 		expect(login).toContain("<string>login</string>");
-		expect(login).toContain("<key>RunAtLoad</key>\n\t<true/>");
+		expect(login).toContain("<key>RunAtLoad</key>\n	<true/>");
 		expect(login).not.toContain("KeepAlive");
+		const hook = hookPlist(paths);
+		expect(hook).toContain(`<string>${HOOK_LABEL}</string>`);
+		expect(hook).toContain("/bin/launchctl");
+		expect(hook).toContain("setenv");
+		expect(hook).toContain(URL.replaceAll("&", "&amp;"));
+		expect(hook).not.toContain("KeepAlive");
+		expect(hook).not.toContain("/bin/bgb");
 	});
 
 	test("values are XML-escaped", () => {
@@ -141,21 +150,26 @@ describe("plists", () => {
 });
 
 describe("autostart and agent", () => {
-	test("autostartInstall writes both plists and loads only the agent job", async () => {
+	test("autostartInstall writes three plists and loads hook then agent", async () => {
 		const darwin = adapter();
 		const data = dataPaths(path.join(tmp, "data"));
 		await darwin.autostartInstall(path.join(data.bin, "bgb"), data);
 		const home = path.join(tmp, "home");
 		expect(await readFile(launchAgentPath(home, AGENT_LABEL), "utf8")).toBe(agentPlist(path.join(data.bin, "bgb"), data));
 		expect(await readFile(launchAgentPath(home, LOGIN_LABEL), "utf8")).toBe(loginPlist(path.join(data.bin, "bgb"), data));
+		expect(await readFile(launchAgentPath(home, HOOK_LABEL), "utf8")).toBe(hookPlist(data));
 		expect(calls).toEqual([
+			["launchctl", "bootout", `gui/501/${HOOK_LABEL}`],
+			["launchctl", "bootstrap", "gui/501", launchAgentPath(home, HOOK_LABEL)],
 			["launchctl", "bootout", `gui/501/${AGENT_LABEL}`],
 			["launchctl", "bootstrap", "gui/501", launchAgentPath(home, AGENT_LABEL)],
 		]);
 		await darwin.autostartRemove();
 		expect(await Bun.file(launchAgentPath(home, AGENT_LABEL)).exists()).toBe(false);
 		expect(await Bun.file(launchAgentPath(home, LOGIN_LABEL)).exists()).toBe(false);
+		expect(await Bun.file(launchAgentPath(home, HOOK_LABEL)).exists()).toBe(false);
 		expect(calls).toContainEqual(["launchctl", "bootout", `gui/501/${LOGIN_LABEL}`]);
+		expect(calls).toContainEqual(["launchctl", "bootout", `gui/501/${HOOK_LABEL}`]);
 	});
 
 	test("startAgent spawns detached with BGB_DATA_DIR without a plist, kickstarts with one", async () => {

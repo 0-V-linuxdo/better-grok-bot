@@ -1,14 +1,12 @@
 import { definePlugin } from "@better-grok-bot/sdk";
-import { SYSTEM_CHILDREN_FIND, injectAfterMicrophone } from "../settings-inject.ts";
 
 const APP_CHUNK = /^assets\/index\.eager-app-[\w-]+\.js$/;
-const SETTINGS_VIEW_CHUNK = /^assets\/chunk-(?:view|general-pane)-[\w-]+\.js$/;
 
 export default definePlugin({
 	id: "output-device",
 	name: "Output Device",
-	description: "Choose which speaker or headset voice mode plays through (Settings → General → Speaker).",
-	version: "0.1.0",
+	description: "Choose which speaker or headset voice mode plays through (Settings → Better Grok Bot → Speaker).",
+	version: "0.1.1",
 	apiVersion: 1,
 	runtime: "runtime.ts",
 	patches: [
@@ -34,14 +32,6 @@ export default definePlugin({
 			file: APP_CHUNK,
 			find: /let (\i)=new Audio;(return \1\.addEventListener\(`ended`,)/,
 			replace: 'const $1=new Audio;globalThis.BetterGrokBot?.call("output-device","trackMediaElement",$1,"voice-preview");$2',
-		},
-		{
-			// Settings → General: render the Speaker row right after the Microphone row
-			// by making the Microphone row component return both rows.
-			id: "speaker-settings-row",
-			file: SETTINGS_VIEW_CHUNK,
-			find: SYSTEM_CHILDREN_FIND,
-			replace: injectAfterMicrophone("output-device", "SpeakerRow", (p) => ({React:p.react,Row:p.row,Select:p.select})),
 		},
 	],
 });

@@ -1,15 +1,13 @@
 import { definePlugin } from "@better-grok-bot/sdk";
-import { SYSTEM_CHILDREN_FIND, injectAfterMicrophone } from "../settings-inject.ts";
 
 const APP_CHUNK = /^assets\/index\.eager-app-[\w-]+\.js$/;
-const SETTINGS_VIEW_CHUNK = /^assets\/chunk-(?:view|general-pane)-[\w-]+\.js$/;
 
 export default definePlugin({
 	id: "voice-keepalive",
 	name: "Voice Keepalive",
 	description:
-		"Reconnects voice calls when the line drops (e.g. after ~15 minutes of silence) instead of hanging up (Settings → General → System → Keep-alive voice).",
-	version: "0.2.0",
+		"Reconnects voice calls when the line drops (e.g. after ~15 minutes of silence) instead of hanging up (Settings → Better Grok Bot → Keep-alive voice).",
+	version: "0.2.1",
 	apiVersion: 1,
 	runtime: "runtime.ts",
 	patches: [
@@ -30,15 +28,6 @@ export default definePlugin({
 			replace:
 				'mayReconnect:()=>globalThis.BetterGrokBot?.call("voice-keepalive","shouldReconnect")??$1.featureGates()?.sand_voice_reconnect===!0',
 			expect: 2,
-		},
-		{
-			// Settings → General → System: the Keep-alive voice row right after the Microphone row (and the
-			// rows other plugins render inside it). Toggle and Row come from the Hardware Acceleration row;
-			// React from the Network Debugger row; the section is the one gated on "grok_bot_network_debugger".
-			id: "settings-row",
-			file: SETTINGS_VIEW_CHUNK,
-			find: SYSTEM_CHILDREN_FIND,
-			replace: injectAfterMicrophone("voice-keepalive", "SettingsRow", (p) => ({React:p.react,Row:p.row,Toggle:p.toggle})),
 		},
 	],
 });

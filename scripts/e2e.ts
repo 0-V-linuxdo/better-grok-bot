@@ -30,11 +30,12 @@ import { mergeEnv, REPO_ROOT, run, runMain, ScriptError, TIMED_OUT, within } fro
 
 const AGENT_LABEL = "io.github.unravl.bettergrokbot.agent";
 const LOGIN_LABEL = "io.github.unravl.bettergrokbot.login";
+const HOOK_LABEL = "io.github.unravl.bettergrokbot.hook";
 const MAC_BUNDLE_ID = "com.anysphere.sand";
 const HOOK_ENV = "VITE_DEV_SERVER_URL";
 const DEBUG_PORT = 9333;
 const MOVED_PORT = 39321;
-const CORE_AND_BUNDLED = ["bgb-react", "bgb-settings", "bgb-client", "bgb-brand", "bot-instructions", "chat-search", "output-device", "push-to-talk", "sidebar-folders", "startup", "voice-dock", "voice-keepalive", "weekly-usage"];
+const CORE_AND_BUNDLED = ["bgb-react", "bgb-settings", "bgb-client", "bgb-brand", "bot-instructions", "chat-search", "connect-apps", "output-device", "push-to-talk", "sidebar-collapse", "sidebar-folders", "startup", "voice-dock", "voice-keepalive", "weekly-usage"];
 const LINUX_MARKER = "X-BetterGrokBot-Original-Exec";
 
 const os = process.platform;
@@ -780,7 +781,7 @@ await runMain("e2e", async () => {
 			const uninstallOut = (await bgb(["uninstall", "--purge", "--yes"], { timeoutMs: 120_000 })).trim();
 			if (os === "darwin") {
 				check((await launchctlGetenv()) === "", `launchctl still has ${HOOK_ENV}`);
-				for (const label of [AGENT_LABEL, LOGIN_LABEL]) check(!existsSync(macPlist(label)), `${macPlist(label)} still exists`);
+				for (const label of [AGENT_LABEL, LOGIN_LABEL, HOOK_LABEL]) check(!existsSync(macPlist(label)), `${macPlist(label)} still exists`);
 			} else if (os === "win32") {
 				check((await windowsUserHookValue()) === "", `the User ${HOOK_ENV} is still set`);
 				const runValue = await runPowerShell(

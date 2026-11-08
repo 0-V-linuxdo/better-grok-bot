@@ -43,9 +43,9 @@ bgb themes disable midnight
 bgb themes uninstall midnight
 ```
 
-Themes live in the `themes` folder of the Better Grok Bot data folder (Settings → General → Better Grok Bot →
+Themes live in the `themes` folder of the Better Grok Bot data folder (Settings → Better Grok Bot →
 Open folder → Themes). Copying a `.theme.css` file there installs it too. Every theme has a toggle in
-Settings → General → Better Grok Bot.
+Settings → Better Grok Bot.
 
 ## Live reload
 

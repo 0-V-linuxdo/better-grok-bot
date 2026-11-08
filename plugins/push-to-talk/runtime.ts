@@ -129,9 +129,6 @@ const BACKGROUND_ROW_LABEL = "Background key";
 const GROK_LEVEL_ROW_LABEL = "Music while Grok talks";
 const USER_LEVEL_ROW_LABEL = "Music while I talk";
 const INSTALL_BUTTON_LABEL = "Install key helper";
-/** The talk button's glyph: a five-bar waveform in a 16px box, as in the README illustration. */
-const WAVEFORM_PATH = "M2 6.5v3M5 4v8M8 2v12M11 4v8M14 6.5v3";
-
 const OS_NAMES: Record<Platform, string> = { darwin: "macOS", win32: "Windows", linux: "Linux" };
 const MODIFIER_NAMES: Record<Platform, Record<string, string>> = {
 	darwin: { Alt: "Option", Meta: "Command", Control: "Control", Shift: "Shift" },
@@ -802,18 +799,12 @@ export function createPushToTalk(ctx: PluginContext) {
 			},
 			onBlur: (): void => release("button-key"),
 		};
-		const glyph = jsx("svg", {
+		const nativeIcon = document.querySelector("i.cursor-icon, i[data-icon-name]");
+		const glyph = jsx("i", {
 			"aria-hidden": true,
-			className: "bgb-push-to-talk__glyph",
-			fill: "none",
-			viewBox: "0 0 16 16",
-			children: jsx("path", {
-				d: WAVEFORM_PATH,
-				stroke: "currentColor",
-				strokeLinecap: "round",
-				strokeLinejoin: "round",
-				strokeWidth: 1.7,
-			}),
+			className: nativeIcon ? `${String(nativeIcon.className)} bgb-push-to-talk__glyph` : "ui-icon cursor-icon bgb-push-to-talk__glyph",
+			"data-icon-name": "waveform",
+			style: { "--cursor-icon-content": `"\uF48C"`, "--icon-size": "18px" },
 		});
 		return function PushToTalkButton() {
 			const state = React.useSyncExternalStore(subscribeSnapshot, getSnapshot);

@@ -13,7 +13,7 @@ export default definePlugin({
 	id: "chat-search",
 	name: "Chat Search",
 	description: "Search the current bot conversation, including earlier history, using the app's native finder and highlighted match navigation.",
-	version: "0.1.0",
+	version: "0.1.9",
 	apiVersion: 1,
 	runtime: "runtime.ts",
 	styles: "styles.css",

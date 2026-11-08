@@ -4,3 +4,4 @@ core/generated/
 .cache/
 native/target/
 .DS_Store
+*.bun-build

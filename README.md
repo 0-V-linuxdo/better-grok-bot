@@ -38,8 +38,8 @@
 </p>
 
 BGB is one command-line program, `bgb`, plus a small background agent. Install it once, then open Grok Bot the way
-you always do: BGB loads its plugins and themes into the app and adds a **Better Grok Bot** section to
-**Settings → General**, where you manage everything.
+you always do: BGB loads its plugins and themes into the app and adds a **Better Grok Bot** tab to
+**Settings**, where you manage everything.
 
 ## Features
 
@@ -47,7 +47,7 @@ you always do: BGB loads its plugins and themes into the app and adds a **Better
 
 | | Feature | What it does | Where |
 |---|---|---|---|
-| <img src="docs/assets/icons/push-to-talk.svg" width="40" alt=""> | **Push to talk** | Hold one key (default Right Option / Right Alt) or the call's talk button to speak; letting go ends your turn so Grok answers right away. With the key helper the key also works while Grok Bot is in the background. | Settings → General → System → Push to talk |
+| <img src="docs/assets/icons/push-to-talk.svg" width="40" alt=""> | **Push to talk** | Hold one key (default Right Option / Right Alt) or the call's talk button to speak; letting go ends your turn so Grok answers right away. With the key helper the key also works while Grok Bot is in the background. | Settings → Better Grok Bot → Push to talk |
 | <img src="docs/assets/icons/ducking.svg" width="40" alt=""> | **Music ducking** | Lowers music players while Grok speaks (default 20%) and while you talk (default 0%). Needs the [key helper](#key-helper). | System → Music while Grok talks / Music while I talk |
 | <img src="docs/assets/icons/keepalive.svg" width="40" alt=""> | **Keep-alive voice** | Reconnects a voice call when the line drops, including after about 15 minutes without speech, instead of hanging up. Saying goodbye or **Hang up** still ends the call. On by default. | System → Keep-alive voice |
 | <img src="docs/assets/icons/startup.svg" width="40" alt=""> | **Start voice on open** | Opens a voice chat with a chosen bot when Grok Bot starts. Pair it with BGB's "Open Grok Bot at login". | System → Start voice on startup |
@@ -68,8 +68,8 @@ you always do: BGB loads its plugins and themes into the app and adds a **Better
 
 | | Feature | What it does | Where |
 |---|---|---|---|
-| <img src="docs/assets/icons/themes.svg" width="40" alt=""> | **Themes** | CSS themes that switch on and off in open windows without a reload. | Settings → General → Better Grok Bot |
-| <img src="docs/assets/icons/plugins.svg" width="40" alt=""> | **Community plugins** | Install from a file, folder, link or GitHub release. BGB shows the permissions a plugin asks for before installing it. | Settings → General → Better Grok Bot, or `bgb plugins install` |
+| <img src="docs/assets/icons/themes.svg" width="40" alt=""> | **Themes** | CSS themes that switch on and off in open windows without a reload. | Settings → Better Grok Bot |
+| <img src="docs/assets/icons/plugins.svg" width="40" alt=""> | **Community plugins** | Install from a file, folder, link or GitHub release. BGB shows the permissions a plugin asks for before installing it. | Settings → Better Grok Bot, or `bgb plugins install` |
 | <img src="docs/assets/icons/updates.svg" width="40" alt=""> | **Auto-updates** | BGB updates itself with a self-test and rollback, and rebuilds automatically when Grok Bot updates. Plugins whose patches no longer fit are turned off for that version, not the whole app. | Better Grok Bot → Install Better Grok Bot updates automatically |
 | <img src="docs/assets/icons/terminal.svg" width="40" alt=""> | **`bgb` CLI** | Setup, status, doctor, logs, plugins, themes, builds and plugin development from the terminal. | [Using it](#using-it) |
 | <img src="docs/assets/icons/shield.svg" width="40" alt=""> | **App stays untouched** | The signed Grok Bot app is never modified. Uninstalling returns you to the stock app. | [Safety](#safety) |
@@ -171,7 +171,7 @@ connects MCP servers. When Grok Bot updates, the agent rebuilds for the new vers
 |---|---|---|---|
 | Data folder (`DATA`) | `~/Library/Application Support/BetterGrokBot` | `%LOCALAPPDATA%\BetterGrokBot` | `~/.local/share/BetterGrokBot` |
 | `bgb` command | `~/.local/bin/bgb` (link) | `DATA\bin` added to your user `Path` | `~/.local/bin/bgb` (link) |
-| How Grok Bot finds BGB | `launchctl setenv VITE_DEV_SERVER_URL …` | user environment variable `VITE_DEV_SERVER_URL` | a copy of `grok-bot.desktop` in `~/.local/share/applications` that sets the variable |
+| How Grok Bot finds BGB | `launchctl setenv VITE_DEV_SERVER_URL …` (LaunchAgent `io.github.unravl.bettergrokbot.hook` re-exports it at login) | user environment variable `VITE_DEV_SERVER_URL` | a copy of `grok-bot.desktop` in `~/.local/share/applications` that sets the variable |
 | Background agent | LaunchAgent `io.github.unravl.bettergrokbot.agent` | started at login (Run key `BetterGrokBot`) | started at login (`~/.config/autostart/better-grok-bot.desktop`) |
 | Login item | LaunchAgent `io.github.unravl.bettergrokbot.login` | the same Run key | the same autostart entry |
 
@@ -180,24 +180,28 @@ connects MCP servers. When Grok Bot updates, the agent rebuilds for the new vers
 On macOS and Windows the variable is set for your whole user session, so another Electron app that also
 reads `VITE_DEV_SERVER_URL` would try to load BGB's page. `bgb doctor` lists installed apps that read it.
 
-On macOS, `launchctl setenv` does not survive a reboot; the agent sets it again when you log in. If Grok Bot
-opens at login before the agent has done that (for example through Grok Bot's own login item), that window
-runs without BGB: `bgb restart` fixes it, and BGB's own "Open Grok Bot at login" setting avoids it.
+On macOS, `launchctl setenv` does not survive a reboot. A tiny LaunchAgent
+(`io.github.unravl.bettergrokbot.hook`) runs `/bin/launchctl setenv` at login so Grok Bot
+opened from the Dock picks up BGB immediately. The agent also re-exports the variable as it
+starts, but the compiled `bgb` binary can take minutes to boot after a reboot — waiting on
+it leaves a window where Grok Bot launches vanilla. If a window still started without BGB,
+`bgb restart` reloads it; BGB's own "Open Grok Bot at login" setting opens the app after the
+hook is exported.
 
 </details>
 
 ## Using it
 
-Open Grok Bot → **Settings → General** and scroll to **Better Grok Bot**. There you can:
+Open Grok Bot → **Settings → Better Grok Bot**. There you can:
 
 - see whether the background agent is connected, and reload after changes ("Reload to apply")
 - turn "Open Grok Bot at login" and automatic BGB updates on or off
-- enable, disable, update and remove plugins, and change their settings
+- enable, disable, update and remove plugins from native settings rows; **Configure** opens that plugin's fields
 - install a plugin from a link or `github:owner/repo`
 - turn themes on and off (they apply instantly)
 - open the plugins, themes and logs folders
 
-Most voice settings sit in **Settings → General → System**, next to the app's Microphone row.
+Most voice settings sit in the same **Better Grok Bot** tab, not in General → System.
 
 In a bot conversation, click **Search** in the chat header to find previous text. Use the arrows or
 **Enter / Shift+Enter** to jump between highlighted matches; **Escape** closes search. Earlier history
@@ -244,7 +248,8 @@ Exit codes: 0 ok, 1 error, 2 usage error, 3 `check` found failures.
 |---|---|---|---|
 | <img src="docs/assets/icons/instructions.svg" width="40" alt=""> | **Bot Instructions** `bot-instructions` | Edit a bot's instructions (its description) in the info pane's Overview tab, for bots you own or manage. | |
 | <img src="docs/assets/icons/search.svg" width="40" alt=""> | **Chat Search** `chat-search` | Search the current bot conversation, including earlier history, with the app's native finder. | |
-| <img src="docs/assets/icons/audio-devices.svg" width="40" alt=""> | **Output Device** `output-device` | Choose which speaker or headset voice mode plays through (Settings → General → System → Speaker). | |
+| <img src="docs/assets/icons/plugins.svg" width="40" alt=""> | **Compact Connect Apps** `connect-apps` | Keep Connect apps as the compact plus button. Expanding the sidebar will not replay the Gmail/Drive/Calendar logo strip. | |
+| <img src="docs/assets/icons/audio-devices.svg" width="40" alt=""> | **Output Device** `output-device` | Choose which speaker or headset voice mode plays through (Settings → Better Grok Bot → Speaker). | |
 | <img src="docs/assets/icons/push-to-talk.svg" width="40" alt=""> | **Push to Talk** `push-to-talk` | Hold a key or the call's talk button to talk in voice calls. With the key helper it also works in the background and lowers music while Grok or you talk. | `keys`, `media` |
 | <img src="docs/assets/icons/folders.svg" width="40" alt=""> | **Sidebar Folders** `sidebar-folders` | Folders in the sidebar: create, rename and delete them, drag bots in and out, and reorder bots inside a folder. | |
 | <img src="docs/assets/icons/startup.svg" width="40" alt=""> | **Startup** `startup` | Start a voice chat with a chosen bot when Grok Bot starts (System → Start voice on startup). | |
@@ -270,7 +275,7 @@ from the Push to Talk settings ("Install key helper" in the **Background key** r
 
 ### Voice MCP servers
 
-Voice calls can use tools from MCP servers you add in **Settings → General → System → Voice MCP servers**.
+Voice calls can use tools from MCP servers you add in **Settings → Better Grok Bot → Voice MCP servers**.
 MCP tools are available in voice only; normal text chat is unchanged.
 
 Before you enable a server:
@@ -289,7 +294,7 @@ overwrites a user server with the same ID. No command arguments or configuration
 and the compiled BGB binary needs no external runtime.
 
 1. Manually open the updated app, then ensure the **Sidebar Folders** and **Voice MCP** plugins are enabled.
-2. Enable **BGB Sidebar Folders** in **Settings → General → System → Voice MCP servers**.
+2. Enable **BGB Sidebar Folders** in **Settings → Better Grok Bot → Voice MCP servers**.
 3. Start a new voice conversation. These tools never automatically launch the app or agent.
 4. Say "Create a folder called Work," "Move Cook into Work," or "Delete Work." Deleting a folder preserves
    every bot; bots outside all remaining folders become **Unassigned**. There is no bot-delete tool.
@@ -318,7 +323,7 @@ selected bot/folder results still reach the remote voice model.
 <details>
 <summary><b>Adding other servers</b></summary>
 
-In **Settings → General → System → Voice MCP servers**, fill in **Add MCP server** with a name and a transport:
+In **Settings → Better Grok Bot → Voice MCP servers**, fill in **Add MCP server** with a name and a transport:
 
 - **stdio (local command):** the command, arguments as a JSON array of strings, environment variables as a
   JSON object, and an optional working directory. Install the command's local runtime first; use an absolute

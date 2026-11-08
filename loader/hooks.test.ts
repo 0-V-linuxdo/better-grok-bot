@@ -74,6 +74,28 @@ describe("core hook registry", () => {
 		expect(hooks.sidebarBrand()).toMatchObject({ type: element.type });
 	});
 
+	test("settingsShell can be created twice; a missing ui still yields a layout, not null", () => {
+		const hooks = createHookRegistry({ log: recordingLogger(), createSection: () => () => "pane" });
+		hooks.provideReact(createFakeReact());
+		const native = { id: "general", label: { id: "x" }, icon: "settings-gear", anchor: "general" };
+		const props = {
+			Layout: "Layout",
+			activeSection: native,
+			sections: [native],
+			onSelectSection: () => {},
+			children: "general-pane",
+			onClose: () => {},
+		};
+		const first = hooks.settingsShell(props) as FakeElement;
+		expect(first).not.toBeNull();
+		expect(typeof first.type).toBe("function");
+		const second = hooks.settingsShell(props) as FakeElement;
+		expect(second.type).toBe(first.type);
+		const tree = (first.type as (props: unknown) => FakeElement)(first.props);
+		expect(tree.type).toBe("Layout");
+		expect(tree.props.children).toBe("general-pane");
+	});
+
 	test("every hook returns its fallback when its internals throw", () => {
 		const log = recordingLogger();
 		const hooks = createHookRegistry({

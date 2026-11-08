@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { RENDERER_URL_ENV } from "../../sdk/index.ts";
 import { readAppPackage } from "../app/package.ts";
 import { errorMessage } from "../errors.ts";
-import type { DataPaths } from "../paths.ts";
+import { type DataPaths, rendererUrl } from "../paths.ts";
 import { stopAgentProcess } from "./agent-control.ts";
 import {
 	type CommandRunner,
@@ -21,6 +21,7 @@ import { type AppInstall, HookConflictError, type HookRecord, type PlatformAdapt
 export const APP_BUNDLE_ID = "com.anysphere.sand";
 export const AGENT_LABEL = "io.github.unravl.bettergrokbot.agent";
 export const LOGIN_LABEL = "io.github.unravl.bettergrokbot.login";
+export const HOOK_LABEL = "io.github.unravl.bettergrokbot.hook";
 export const HELPER_LABEL = "io.github.unravl.bettergrokbot.helper";
 
 /** `~/Library/LaunchAgents/<label>.plist`. */
@@ -91,6 +92,25 @@ export function loginPlist(binPath: string, paths: DataPaths): string {
 	});
 }
 
+/**
+ * One-shot at login: `/bin/launchctl setenv` the renderer URL.
+ *
+ * `launchctl setenv` is wiped at reboot. The 62 MB `bgb agent` binary can take minutes to reach
+ * `reexportHook` after login, so a Dock/Spotlight launch of Grok Bot in that window is vanilla.
+ * This job does not run bun.
+ */
+export function hookPlist(paths: DataPaths): string {
+	const log = path.join(paths.logs, "hook.log");
+	return plistXml({
+		Label: HOOK_LABEL,
+		ProgramArguments: ["/bin/launchctl", "setenv", RENDERER_URL_ENV, rendererUrl(paths)],
+		RunAtLoad: true,
+		ProcessType: "Background",
+		StandardOutPath: log,
+		StandardErrorPath: log,
+	});
+}
+
 /** PID of the main process in a `ps -axww -o pid=,args=` listing; helper processes never match. */
 export function parsePsMainPid(listing: string, executable: string): number | undefined {
 	for (const line of listing.split("\n")) {
@@ -132,6 +152,7 @@ export function createDarwinAdapter(deps: DarwinDeps = {}): PlatformAdapter {
 	const domain = `gui/${deps.uid ?? userInfo().uid}`;
 	const agentPlistPath = launchAgentPath(home, AGENT_LABEL);
 	const loginPlistPath = launchAgentPath(home, LOGIN_LABEL);
+	const hookPlistPath = launchAgentPath(home, HOOK_LABEL);
 
 	const launchctl = async (...args: string[]) => run(["launchctl", ...args]);
 
@@ -234,6 +255,11 @@ export function createDarwinAdapter(deps: DarwinDeps = {}): PlatformAdapter {
 			await writeFile(agentPlistPath, agentPlist(binPath, paths));
 			// launchd loads the login job at the next login; loading it now would run `bgb login` during setup.
 			await writeFile(loginPlistPath, loginPlist(binPath, paths));
+			await writeFile(hookPlistPath, hookPlist(paths));
+			// Hook first: `/bin/launchctl setenv` is instant; the agent binary can take minutes to boot.
+			await launchctl("bootout", `${domain}/${HOOK_LABEL}`);
+			const hookResult = await launchctl("bootstrap", domain, hookPlistPath);
+			if (hookResult.code !== 0) throw new Error(`launchctl bootstrap ${HOOK_LABEL} failed: ${failureText(hookResult)}`);
 			await launchctl("bootout", `${domain}/${AGENT_LABEL}`);
 			const result = await launchctl("bootstrap", domain, agentPlistPath);
 			if (result.code !== 0) throw new Error(`launchctl bootstrap ${AGENT_LABEL} failed: ${failureText(result)}`);
@@ -242,8 +268,10 @@ export function createDarwinAdapter(deps: DarwinDeps = {}): PlatformAdapter {
 		async autostartRemove() {
 			await launchctl("bootout", `${domain}/${AGENT_LABEL}`);
 			await launchctl("bootout", `${domain}/${LOGIN_LABEL}`);
+			await launchctl("bootout", `${domain}/${HOOK_LABEL}`);
 			await rm(agentPlistPath, { force: true });
 			await rm(loginPlistPath, { force: true });
+			await rm(hookPlistPath, { force: true });
 		},
 
 		async startAgent(binPath, paths) {

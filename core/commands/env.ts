@@ -76,6 +76,6 @@ export async function confirmAction(question: string, yes: boolean): Promise<boo
 /** Printed after a config change the agent applies by rebuilding. */
 export async function applyHint(ctx: CoreContext): Promise<string> {
 	return (await readLiveAgent(ctx.paths))
-		? "The agent rebuilds now; then use Reload to apply in Grok Bot → Settings → General → Better Grok Bot."
+		? "The agent rebuilds now; then use Reload to apply in Grok Bot → Settings → Better Grok Bot."
 		: "The agent is not running; it applies this when it starts (bgb start), or run: bgb build";
 }

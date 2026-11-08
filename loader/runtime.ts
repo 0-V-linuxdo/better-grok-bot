@@ -291,6 +291,7 @@ export function createRuntime(options: RuntimeOptions): LoaderRuntime {
 		provideReact: (react: unknown) => hooks.provideReact(react),
 		provideClient: <T>(client: T): T => hooks.provideClient(client),
 		settingsSection: (ui: UiPrimitives) => hooks.settingsSection(ui),
+		settingsShell: (props: unknown) => hooks.settingsShell(props),
 		brandCatalog(messages: unknown): unknown {
 			try {
 				return renameCatalog(messages);

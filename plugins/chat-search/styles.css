@@ -1,13 +1,4 @@
-:root {
-	--bgb-brand-violet: #8b5cf6;
-	--bgb-brand-indigo: #6366f1;
-	--bgb-brand-cyan: #22d3ee;
-	--bgb-brand-gradient: linear-gradient(90deg, var(--bgb-brand-violet), var(--bgb-brand-indigo) 52%, var(--bgb-brand-cyan));
-	--bgb-brand-gradient-diagonal: linear-gradient(135deg, var(--bgb-brand-violet), var(--bgb-brand-indigo) 52%, var(--bgb-brand-cyan));
-	--bgb-brand-soft: rgb(139 92 246 / 0.16);
-}
-
-/* Theme-following tokens; the hex values are the hero's dark fallbacks. */
+/* Theme-following tokens; hex values are dark fallbacks. */
 .bgb-chat-search,
 .bgb-chat-search-button {
 	--bgb-chat-search-surface: var(--sand-bg-elevated, var(--cursor-bg-elevated, #1c1c21));
@@ -18,53 +9,27 @@
 	--bgb-chat-search-hover: var(--sand-fill-ghost-hover, var(--cursor-bg-tertiary, rgb(255 255 255 / 0.07)));
 }
 
-/* Header button: the app's ghost pill, with the hero's feature-chip accent while search is open. */
+/* Header Search clones the sidebar island Search control (icon-only). Do not
+ * restyle it into a filled 36px disc — that sat on the title chip with no glyph. */
 .bgb-chat-search-button {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	height: 28px;
-	padding: 0 11px 0 9px;
-	border: 1px solid transparent;
-	border-radius: 999px;
-	background: transparent;
-	color: var(--bgb-chat-search-secondary);
-	font: inherit;
-	font-size: 13px;
-	font-weight: 500;
-	white-space: nowrap;
-	cursor: pointer;
 	-webkit-app-region: no-drag;
-}
-
-.bgb-chat-search-button svg {
 	flex: none;
-	width: 15px;
-	height: 15px;
 }
 
-.bgb-chat-search-button:hover {
-	background-color: var(--bgb-chat-search-hover);
-	color: var(--bgb-chat-search-text);
+/*
+ * Do not set container-type on .sand-chat-header__controls: size containment
+ * collapses that flex item to 0 width, and the Search/Share cluster overflows
+ * the window after the info pane closes. The pane itself stays mounted at
+ * width 0 (not [hidden]); only .sand-info-pane__inner gets hidden.
+ */
+.sand-shell:has(.sand-info-pane__inner:not([hidden])) .vpp-export__label {
+	display: none !important;
 }
 
-:root:has(.bgb-chat-search) .bgb-chat-search-button {
-	background:
-		linear-gradient(var(--bgb-brand-soft), var(--bgb-brand-soft)) padding-box,
-		linear-gradient(var(--bgb-chat-search-surface), var(--bgb-chat-search-surface)) padding-box,
-		var(--bgb-brand-gradient) border-box;
-	color: var(--bgb-chat-search-text);
-}
-
-:root:has(.bgb-chat-search) .bgb-chat-search-button svg {
-	color: var(--bgb-brand-violet);
-}
-
-.bgb-chat-search-button:focus-visible,
-.bgb-chat-search-history button:focus-visible,
-.bgb-chat-search .sand-chat-find-bar > button:focus-visible {
-	outline: 2px solid var(--bgb-brand-violet) !important;
-	outline-offset: 2px;
+@container sand-header (max-width: 480px) {
+	.vpp-export__label {
+		display: none !important;
+	}
 }
 
 /* Floating search, right-aligned under the header. */
@@ -85,18 +50,16 @@
 	position: static !important;
 }
 
-/* The 34px pill with a 1.5px brand-gradient border (double-background border technique). */
+/* Native-chrome find bar: elevated fill, hairline stroke. No brand gradient. */
 .bgb-chat-search .sand-chat-find-bar {
 	box-sizing: border-box !important;
 	gap: 0 !important;
-	height: 34px !important;
-	padding: 0 6px 0 14px !important;
-	border: 1.5px solid transparent !important;
-	border-radius: 17px !important;
-	background:
-		linear-gradient(var(--bgb-chat-search-surface), var(--bgb-chat-search-surface)) padding-box,
-		var(--bgb-brand-gradient) border-box !important;
-	box-shadow: var(--sand-shadow-popover, 0 12px 32px rgb(0 0 0 / 0.35)) !important;
+	height: 36px !important;
+	padding: 0 6px 0 12px !important;
+	border: 1px solid var(--bgb-chat-search-divider) !important;
+	border-radius: 10px !important;
+	background: var(--bgb-chat-search-surface) !important;
+	box-shadow: var(--sand-shadow-popover, 0 8px 24px rgb(0 0 0 / 0.28)) !important;
 	color: var(--bgb-chat-search-text) !important;
 }
 
@@ -173,9 +136,9 @@
 	gap: 4px 8px;
 	padding: 8px 12px;
 	border: 1px solid var(--bgb-chat-search-divider);
-	border-radius: 12px;
+	border-radius: 10px;
 	background: var(--bgb-chat-search-surface);
-	box-shadow: var(--sand-shadow-popover, 0 12px 32px rgb(0 0 0 / 0.35));
+	box-shadow: var(--sand-shadow-popover, 0 8px 24px rgb(0 0 0 / 0.28));
 	color: var(--bgb-chat-search-muted);
 	font-size: 12px;
 	line-height: 1.4;
@@ -191,18 +154,17 @@
 	padding: 2px 6px;
 	margin-left: -6px;
 	background: transparent;
-	color: var(--bgb-brand-violet);
+	color: var(--bgb-chat-search-text);
 	font: inherit;
 	font-weight: 600;
 	cursor: pointer;
 }
 
 .bgb-chat-search-history button:hover {
-	background-color: var(--bgb-brand-soft);
+	background-color: var(--bgb-chat-search-hover);
 }
 
 @media (prefers-reduced-motion: no-preference) {
-	.bgb-chat-search-button,
 	.bgb-chat-search .sand-chat-find-bar > button,
 	.bgb-chat-search-history button {
 		transition: background-color 120ms ease, color 120ms ease;
@@ -210,14 +172,13 @@
 }
 
 /*
- * Native match highlights use the CSS Custom Highlight API. ::highlight() accepts colours only
- * (no background-image), so the current match takes the gradient's violet-indigo blend.
+ * Native match highlights: muted fill for hits, warning for the current one.
+ * Not the brand violet/cyan gradient.
  */
 ::highlight(sand-find-match) {
-	background-color: color-mix(in srgb, var(--bgb-brand-violet) 30%, transparent) !important;
+	background-color: color-mix(in srgb, var(--sand-text-primary, #f5f5f5) 16%, transparent) !important;
 }
-
 ::highlight(sand-find-current) {
-	background-color: color-mix(in srgb, var(--bgb-brand-violet), var(--bgb-brand-indigo)) !important;
-	color: #fff !important;
+	background-color: var(--sand-fill-warning, #c4a35a) !important;
+	color: var(--sand-bg-primary, #111) !important;
 }

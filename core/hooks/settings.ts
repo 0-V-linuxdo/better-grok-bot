@@ -29,30 +29,58 @@ function unique(name: string, pattern: RegExp, text: string, group = 1): string 
 	return only;
 }
 
-export function settingsReplace(m: PatchMatch): string {
-	const [head = "", children = "", tail = ""] = m.groups;
-	const section = unique("Section", SECTION, head);
-	const row = unique("Row", ROW, m.text);
-	const toggle = unique("Toggle", TOGGLE, m.text);
-	const select = unique("Select", SELECT, m.text);
-	const button = unique("Button", BUTTON, m.text);
-	const textStyles = unique("textStyles", BUTTON, m.text, 2);
-	return `${head}${children},globalThis.BetterGrokBot?.settingsSection({Section:${section},Row:${row},Toggle:${toggle},Select:${select},Button:${button},textStyles:${textStyles}})??null${tail}`;
+function settingsCall(text: string): string {
+	const section = unique("Section", SECTION, text);
+	const row = unique("Row", ROW, text);
+	const toggle = unique("Toggle", TOGGLE, text);
+	const select = unique("Select", SELECT, text);
+	const button = unique("Button", BUTTON, text);
+	const textStyles = unique("textStyles", BUTTON, text, 2);
+	return `globalThis.BetterGrokBot?.settingsSection({Section:${section},Row:${row},Toggle:${toggle},Select:${select},Button:${button},textStyles:${textStyles}})`;
 }
 
-/** Appends the Better Grok Bot section to the end of Settings → General. */
+/** Records UI primitives when General mounts, without adding a section child. */
+export function captureReplace(m: PatchMatch): string {
+	const ident = m.groups[0] ?? "";
+	const he = m.groups[1] ?? "";
+	const heArgs = m.groups[2] ?? "";
+	return `${ident}=(${settingsCall(m.text)},${he}(\`sand-settings-general\`${heArgs})`;
+}
+
+/** Adds the Better Grok Bot tab to Settings (not a section at the bottom of General). */
 export const settingsHook = definePlugin({
 	id: "bgb-settings",
 	name: "Settings section",
-	description: "Adds the Better Grok Bot section to Settings → General.",
-	version: "1.0.0",
+	description: "Adds a Better Grok Bot tab to Settings.",
+	version: "1.1.0",
 	apiVersion: 1,
 	patches: [
 		{
-			id: "general-section",
+			id: "capture-ui",
 			file: /^assets\/chunk-(?:view|general-pane)-[\w-]+\.js$/,
-			find: /(`sand-settings-general`[^]*?\.jsxs\)\(`div`,\{className:\i,children:\[)((?:\i,)*\i)(\]\}\))/,
-			replace: settingsReplace,
+			find: /(\i)=(\i)\(`sand-settings-general`(,\{className:`[^`]+`\}\.className\))/,
+			replace: captureReplace,
+			expect: 1,
+		},
+		{
+			id: "layout-shell",
+			file: /^assets\/chunk-layout-[\w-]+\.js$/,
+			find: /(\(0,(\i)\.jsx\)\()(\i),\{(activeSection:\i,boxActionError:\i\.boxActionError,navFooter:\i,onClose:\i,onSelectSection:\i,presentation:\i\.presentation,sections:\i,children:\i)\}/,
+			replace: "globalThis.BetterGrokBot?.settingsShell({jsx:$2.jsx,Layout:$3,$4})??$1$3,{$4}",
+			expect: 1,
+		},
+		{
+			id: "nav-label",
+			file: /^assets\/chunk-layout-[\w-]+\.js$/,
+			find: /children:(\i)\._\(e\.label\)/,
+			replace: "children:typeof e.label==`string`?e.label:$1._(e.label)",
+			expect: 1,
+		},
+		{
+			id: "header-label",
+			file: /^assets\/chunk-layout-[\w-]+\.js$/,
+			find: /(\i)\._\(r\.label\)/,
+			replace: "typeof r.label==`string`?r.label:$1._(r.label)",
 			expect: 1,
 		},
 	],

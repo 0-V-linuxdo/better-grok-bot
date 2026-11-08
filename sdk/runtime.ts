@@ -151,6 +151,8 @@ export interface BetterGrokBotRuntime {
 	provideClient<T>(client: T): T;
 	/** Core hook `bgb-settings`; a React element, or null on any failure; never throws. */
 	settingsSection(ui: UiPrimitives): unknown;
+	/** Core hook `bgb-settings`; wraps Settings with a Better Grok Bot tab, or null; never throws. */
+	settingsShell(props: unknown): unknown;
 	/** Core hook `bgb-brand`; the catalog with the messages naming the app renamed, or undefined to keep the app's; never throws. */
 	brandCatalog(messages: unknown): unknown;
 	/** Core hook `bgb-brand`; the sidebar label element, or null; never throws. */

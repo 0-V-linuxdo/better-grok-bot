@@ -1,11 +1,17 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import type { PluginContext, SidebarCommand, SidebarResult } from "@better-grok-bot/sdk";
 import {
 	createSidebarFolders,
+	emptySidebarSpace,
+	insertNewFolderButton,
+	NEW_FOLDER_BUTTON_CLASS,
 	orderByIds,
 	parseSections,
 	placeAgent,
+	placeAgents,
 	resolveRead,
+	selectedSidebarAgentIds,
 	STORAGE_KEY,
 	type Section,
 	type SidebarFoldersRuntime,
@@ -42,6 +48,19 @@ describe("placeAgent", () => {
 
 	test("unknown section is null", () => {
 		expect(placeAgent(sections, "1", "nope", null, null)).toBeNull();
+	});
+});
+
+describe("placeAgents", () => {
+	test("moves a multi-selection into a folder as one block at the drop slot", () => {
+		const next = placeAgents(sections, ["4", "1"], "a", "3", "2");
+		expect(next?.[0]?.agentIds).toEqual(["2", "4", "1", "3"]);
+		expect(next?.[1]?.agentIds).toEqual([]);
+	});
+
+	test("keeps the given order when dropping at the end", () => {
+		expect(placeAgents(sections, ["3", "4"], "b", null, null)?.[1]?.agentIds).toEqual(["3", "4"]);
+		expect(placeAgents(sections, ["3", "4"], "b", null, null)?.[0]?.agentIds).toEqual(["1", "2"]);
 	});
 });
 
@@ -132,9 +151,11 @@ describe("folder storage", () => {
 		await expect(plugin.writeSections(Promise.reject(new Error("offline")), [])).rejects.toThrow("offline");
 	});
 
-	test("read failure falls back to the local copy, or fails without one", async () => {
+	test("read failure falls back to the local copy, or an empty list so folders can still be created", async () => {
 		expect(await createSidebarFolders(fakeContext({ [STORAGE_KEY]: [folder] }).ctx).readSections(Promise.reject(new Error("x")))).toEqual([folder]);
-		await expect(createSidebarFolders(fakeContext().ctx).readSections(Promise.reject(new Error("x")))).rejects.toThrow("x");
+		// Grok Bot has no Cursor computer: getHostSidebarSections rejects. An empty list
+		// keeps the native store supported; throwing leaves cache=null and hides every folder UI.
+		expect(await createSidebarFolders(fakeContext().ctx).readSections(Promise.reject(new Error("x")))).toEqual([]);
 	});
 
 	test("anything but a pending request is left to the app", () => {
@@ -856,4 +877,95 @@ describe("sidebar folder commands", () => {
 			expect(fixture.native.failureListeners.size).toBe(0);
 		});
 	}
+});
+
+describe("emptySidebarSpace", () => {
+	beforeAll(() => GlobalRegistrator.register());
+	afterAll(() => {
+		document.body.replaceChildren();
+		GlobalRegistrator.unregister();
+	});
+	beforeEach(() => document.body.replaceChildren());
+
+	test("the list padding (not a bot row) is empty space", () => {
+		document.body.innerHTML = `<aside class="sand-agents-sidebar"><div class="sand-agents-sidebar__header"></div><div class="list"><button data-agent-id="bot">Bot</button></div></aside>`;
+		const list = document.querySelector(".list") as Element;
+		expect(emptySidebarSpace(list)).toBe(document.querySelector("aside"));
+	});
+
+	test("a bot button is not empty space", () => {
+		document.body.innerHTML = `<aside class="sand-agents-sidebar"><button data-agent-id="bot">Bot</button></aside>`;
+		expect(emptySidebarSpace(document.querySelector("button"))).toBeNull();
+	});
+
+	test("a folder header is not empty space", () => {
+		document.body.innerHTML = `<aside class="sand-agents-sidebar"><div class="sand-agents-section" data-section-id="work"><button class="sand-agents-section__header" data-section-id="work">Work</button></div><button data-agent-id="bot">Bot</button></aside>`;
+		expect(emptySidebarSpace(document.querySelector(".sand-agents-section__header"))).toBeNull();
+	});
+
+	test("the empty body of a folder (not its header) is empty space", () => {
+		document.body.innerHTML = `<aside class="sand-agents-sidebar"><div class="sand-agents-section" data-section-id="work"><button class="sand-agents-section__header" data-section-id="work">Work</button><div class="sand-agents-section__empty">Empty</div></div><button data-agent-id="bot">Bot</button></aside>`;
+		expect(emptySidebarSpace(document.querySelector(".sand-agents-section__empty"))?.className).toBe("sand-agents-sidebar");
+	});
+});
+
+describe("insertNewFolderButton", () => {
+	beforeAll(() => GlobalRegistrator.register());
+	beforeEach(() => document.body.replaceChildren());
+
+	test("places an icon-only New folder control in the header actions, left of Search", () => {
+		document.body.innerHTML = `<aside class="sand-agents-sidebar"><div class="sand-agents-sidebar__header"><div class="sand-agents-sidebar__new-actions"><button aria-label="Search" class="sand-kit-icon-button"><span class="sand-kit-icon"><i class="cursor-icon" data-icon-name="search" style="--icon-size: 16px"></i></span></button><button aria-label="New Bot" class="sand-kit-icon-button"><span class="sand-kit-icon"><i class="cursor-icon" data-icon-name="plus"></i></span></button></div></div><button data-agent-id="bot">Bot</button></aside>`;
+		const aside = document.querySelector("aside") as HTMLElement;
+		const created: number[] = [];
+		const first = insertNewFolderButton(aside, () => created.push(1));
+		const second = insertNewFolderButton(aside, () => created.push(2));
+		expect(second).toBe(first);
+		expect(aside.querySelectorAll(`.${NEW_FOLDER_BUTTON_CLASS}`).length).toBe(1);
+		const actions = aside.querySelector(".sand-agents-sidebar__new-actions") as HTMLElement;
+		expect(first.parentElement).toBe(actions);
+		expect(first.nextElementSibling?.getAttribute("aria-label")).toBe("Search");
+		expect(first.getAttribute("aria-label")).toBe("New folder");
+		expect(first.textContent).not.toContain("New folder");
+		expect(first.querySelector("[data-icon-name='folder-plus']")).not.toBeNull();
+		first.click();
+		expect(created).toEqual([1]);
+	});
+
+	test("places New folder in the collapsed rail actions when those exist", () => {
+		document.body.innerHTML = `<aside class="sand-agents-sidebar"><div class="sand-agents-sidebar__header"><div class="sand-agents-sidebar__rail-actions"><button aria-label="Search" class="sand-kit-icon-button"><span class="sand-kit-icon"><i class="cursor-icon" data-icon-name="search"></i></span></button><button aria-label="New Bot" class="sand-kit-icon-button"><span class="sand-kit-icon"><i class="cursor-icon" data-icon-name="plus"></i></span></button></div></div><button data-agent-id="bot">Bot</button></aside>`;
+		const aside = document.querySelector("aside") as HTMLElement;
+		const button = insertNewFolderButton(aside, () => {});
+		const rail = aside.querySelector(".sand-agents-sidebar__rail-actions") as HTMLElement;
+		expect(button.parentElement).toBe(rail);
+		expect(button.nextElementSibling?.getAttribute("aria-label")).toBe("Search");
+		expect(button.querySelector("[data-icon-name='folder-plus']")).not.toBeNull();
+	});
+});
+
+describe("selectedSidebarAgentIds", () => {
+	beforeAll(() => {
+		try {
+			GlobalRegistrator.register();
+		} catch {
+			/* already registered by a sibling describe */
+		}
+	});
+	beforeEach(() => document.body.replaceChildren());
+
+	test("when the dragged bot is multi-selected, returns every selected bot in sidebar order", () => {
+		document.body.innerHTML = `<aside class="sand-agents-sidebar">
+			<button data-agent-id="a" data-selected="true"></button>
+			<button data-agent-id="b"></button>
+			<button data-agent-id="c" data-selected="true"></button>
+		</aside>`;
+		expect(selectedSidebarAgentIds("c")).toEqual(["a", "c"]);
+	});
+
+	test("a drag of an unselected bot moves only that bot", () => {
+		document.body.innerHTML = `<aside class="sand-agents-sidebar">
+			<button data-agent-id="a" data-selected="true"></button>
+			<button data-agent-id="b"></button>
+		</aside>`;
+		expect(selectedSidebarAgentIds("b")).toEqual(["b"]);
+	});
 });

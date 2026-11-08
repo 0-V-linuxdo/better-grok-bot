@@ -1,0 +1,13 @@
+/*
+ * Native Grok Bot only mounts .sand-agents-sidebar__collapse when
+ * desktop.boot.isAssistiveTechEnabled is true. BGB dogfood launches with
+ * --remote-debugging-port=9333 / bgb agent, which turns Chromium a11y on,
+ * so the layout-sidebar-left control appears even though nothing injects it.
+ *
+ * Hide that control only. Do not touch header padding, justify, or
+ * .sand-agents-sidebar__new-actions: extra padding-left stacks on the
+ * traffic-light overlay and drops Search/+ onto the pinned bot tile.
+ */
+.sand-agents-sidebar__collapse {
+	display: none !important;
+}

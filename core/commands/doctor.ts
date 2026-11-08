@@ -97,7 +97,7 @@ export async function runDoctor(env: CommandEnv, argv: readonly string[]): Promi
 	else if (hook.state === "conflict") {
 		report("fail", `${RENDERER_URL_ENV} is set to ${hook.value} by something else`, "remove it, then run: bgb setup");
 	} else if (state.hook && platform.id === "darwin") {
-		report("fail", `${RENDERER_URL_ENV} is not exported (launchd forgets it at reboot until the agent starts)`, "run: bgb start, then bgb restart");
+		report("fail", `${RENDERER_URL_ENV} is not exported (launchd forgets it at reboot until the hook LaunchAgent runs)`, "run: bgb start, then bgb restart");
 	} else report("fail", "the Grok Bot hook is not installed", "run: bgb setup");
 
 	const record = await readLiveAgent(paths);

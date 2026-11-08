@@ -16,12 +16,16 @@ async function launchctlGetenv(name: string): Promise<string> {
 	return text.trim();
 }
 
-/** macOS: launchd starts the agent job at login, and the agent re-exports the hook as it starts. */
-async function waitForLaunchdHook(ctx: CoreContext, url: string, timeoutMs: number): Promise<void> {
-	const deadline = Date.now() + timeoutMs;
-	while ((await launchctlGetenv(RENDERER_URL_ENV)) !== url) {
-		if (Date.now() >= deadline) throw new Error(`${RENDERER_URL_ENV} was not exported within ${timeoutMs / 1000} s`);
-		await Bun.sleep(500);
+/** macOS: export the renderer URL ourselves. Do not wait for `bgb agent` — it can take minutes to boot. */
+async function exportLaunchdHook(ctx: CoreContext, url: string): Promise<void> {
+	const current = await launchctlGetenv(RENDERER_URL_ENV);
+	if (current !== "" && current !== url) {
+		throw new Error(`${RENDERER_URL_ENV} is set to ${current} by something else`);
+	}
+	if (current !== url) {
+		const proc = Bun.spawn(["launchctl", "setenv", RENDERER_URL_ENV, url], { stdout: "ignore", stderr: "pipe" });
+		const stderr = await new Response(proc.stderr).text();
+		if ((await proc.exited) !== 0) throw new Error(`launchctl setenv failed: ${stderr.trim()}`);
 	}
 	ctx.log.info(`login: ${RENDERER_URL_ENV} is exported`);
 }
@@ -38,7 +42,7 @@ export async function runLogin(env: CommandEnv, argv: readonly string[]): Promis
 	let failed = false;
 	try {
 		if (ctx.platform.id === "darwin") {
-			if ((await readState(ctx.paths)).hook) await waitForLaunchdHook(ctx, url, 30_000);
+			if ((await readState(ctx.paths)).hook) await exportLaunchdHook(ctx, url);
 		} else {
 			if (!(await readLiveAgent(ctx.paths))) await ctx.platform.startAgent(installedBinary(ctx), ctx.paths);
 			await waitForAgent(ctx.paths, config.bridgePort, { timeoutMs: 60_000 });

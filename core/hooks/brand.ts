@@ -1,6 +1,5 @@
 import { definePlugin } from "../../sdk/index.ts";
 
-const APP_CHUNK = /^assets\/index\.eager-app-[\w-]+\.js$/;
 const I18N_CHUNK = /^assets\/index\.eager-(?:common|vendor)-[\w-]+\.js$/;
 
 /** Calls the app Better Grok Bot; the renderer side lives in `loader/brand.ts`. */
@@ -8,7 +7,7 @@ export const brandHook = definePlugin({
 	id: "bgb-brand",
 	name: "Branding",
 	description:
-		"Calls the app Better Grok Bot: the window title, the messages where the app names itself, and a label at the top of the agents sidebar.",
+		"Calls the app Better Grok Bot: the window title and the messages where the app names itself.",
 	version: "1.0.0",
 	apiVersion: 1,
 	patches: [
@@ -33,13 +32,6 @@ export const brandHook = definePlugin({
 			// 0.79.3 uses `let`, not `const`, for the existing catalog entry.
 			find: /(_load\((\i),(\i)\)\{)(let \i=this\._messages\[\2\];)/,
 			replace: "$1$3=globalThis.BetterGrokBot?.brandCatalog($3)??$3;$4",
-			expect: 1,
-		},
-		{
-			id: "sidebar-brand",
-			file: APP_CHUNK,
-			find: /((\i)=\i\(`sand-agents-sidebar`,\i\.className\)[^]*?\i\.jsxs\)\(`aside`,\{[^{}]*?className:\2,[^{}]*?children:\[\i,)/,
-			replace: "$1globalThis.BetterGrokBot?.sidebarBrand()??null,",
 			expect: 1,
 		},
 	],

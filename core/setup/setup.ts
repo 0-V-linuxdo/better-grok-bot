@@ -71,7 +71,7 @@ function printSummary(host: SetupHost, outcome: BuildOutcome, app: AppInstall, n
 	}
 	for (const note of notes) host.print(note);
 	if (opts.noHook) host.print("No hook installed (--no-hook): run `bgb restart` to start Grok Bot with Better Grok Bot.");
-	host.print("Open Grok Bot → Settings → General → Better Grok Bot");
+	host.print("Open Grok Bot → Settings → Better Grok Bot");
 }
 
 /**

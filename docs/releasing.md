@@ -86,7 +86,7 @@ Before announcing a release, check on real machines:
 
 1. `curl -fsSL https://raw.githubusercontent.com/Unravl/better-grok-bot/main/install.sh | sh` on a Mac
    with Grok Bot running: setup asks to restart Grok Bot and it comes back modded.
-2. Settings → General shows the Better Grok Bot section: status "Connected", the four bundled plugins
+2. Settings → Better Grok Bot shows status "Connected", the bundled plugins
    with toggles; toggling one rebuilds and offers "Reload to apply".
 3. Push to talk: "Install key helper", allow it in System Settings → Privacy & Security → Input
    Monitoring; holding the key in the background talks in a manual-turn call; Spotify ducks and restores.
