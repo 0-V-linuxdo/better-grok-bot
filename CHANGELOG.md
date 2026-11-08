@@ -6,6 +6,7 @@ All notable changes to Better Grok Bot are documented here.
 
 ### Fixed
 
+- Plugin cards follow Void++ `BaseCard`: 8px radius, 24px icon chip, 2-line description, author footer with a hairline, blue on-switch (Grok accent), 14px ghost star/pin/gear.
 - Plugins grid used `@container (max-width: 720px)` on the ~641px pane, so a 945px Grok Bot window was 1-col and no longer matched Userscript++. It now uses USPP's viewport `@media (max-width: 720px)` (2-col at the usual window; long names ellipsis).
 - Plugin Configure dialog showed **Authors: Unknown** for bundled plugins (cards already said Unravl) and an empty body for disabled extra-only plugins. Bundled authors are Unravl; disabled extra-only plugins say **Enable this plugin to configure it.**
 - Settings overlay died after the first visit: clicking **Better Grok Bot** passed `anchor: "bgb"` into pane-header's heading-link, which does `OL[anchor].label` and threw `Cannot read properties of undefined (reading 'label')`. The tab now reuses the native `general` heading-link key (`id` stays `bgb`). The sticky layout error boundary is also gone — only the BGB pane is bounded, and the native General pane stays mounted (hidden) while that tab is selected.

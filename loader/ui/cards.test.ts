@@ -28,7 +28,10 @@ test("card CSS matches native General pane padding and does not overflow the pan
 	expect(CARDS_CSS).toContain("padding: 22px 32px 28px");
 	expect(CARDS_CSS).toContain("@media (max-width: 720px)");
 	expect(CARDS_CSS).not.toContain("container-type");
-	expect(CARDS_CSS).toContain(".uspp-switch { position: relative; width: 44px; height: 24px");
+	expect(CARDS_CSS).toContain(".uspp-switch { position: relative; width: 36px; height: 20px");
+	expect(CARDS_CSS).toContain(".uspp-card-separator {");
+	expect(CARDS_CSS).toContain("-webkit-line-clamp: 2");
+	expect(CARDS_CSS).toContain("min-height: 7.5rem");
 	expect(CARDS_CSS).toContain('data-icon-name="robot"');
 	expect(CARDS_CSS).toContain("top: -8px");
 	expect(CARDS_CSS).toContain(".uspp-card-title {");

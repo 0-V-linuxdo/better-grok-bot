@@ -1,9 +1,8 @@
 /**
- * Userscript++ plugin-card layout inside Settings → Better Grok Bot.
- * Grid / card chrome match `uspp-grid` + `uspp-card`; toggles and buttons are
- * the app's settings primitives. Scroll/padding match native General
- * (`.ui-scroll-area` + `.sand-settings-pane` 22px 32px 28px) — do not put
- * overflow on `.sand-settings-panel__body` or a 15px classic scrollbar eats width.
+ * Plugin cards match Void++ `BaseCard` / `PluginCard` (icon chip, 2-line desc,
+ * author footer, blue switch). Toolbar/grid tokens stay Userscript++.
+ * Scroll/padding match native General — do not put overflow on
+ * `.sand-settings-panel__body` or a 15px classic scrollbar eats width.
  */
 import type { UiPrimitives } from "../../sdk/index.ts";
 import type { H } from "./h.ts";
@@ -110,24 +109,36 @@ export const CARDS_CSS = `
 @media (max-width: 720px) { .uspp-grid { grid-template-columns: 1fr; } }
 .uspp-card {
 	box-sizing: border-box;
-	display: flex; flex-direction: column; gap: 6px; padding: 12px 14px;
-	border: 1px solid var(--uspp-border-l1); border-radius: 16px; background: var(--uspp-surface-l1); min-width: 0;
+	display: flex; flex-direction: column; padding: 0;
+	border: 1px solid var(--uspp-border-l1); border-radius: 8px; background: var(--uspp-surface-l1);
+	min-width: 0; min-height: 7.5rem; overflow: hidden;
 	font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 .uspp-card[data-failed="true"] { border-color: var(--uspp-fg-danger); background: color-mix(in srgb, var(--uspp-fg-danger) 8%, transparent); }
-.uspp-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.uspp-card-title { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; overflow: hidden; }
-.uspp-card-name { font-weight: 600; font-size: 14px; line-height: 20px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.uspp-card-controls { margin-left: auto; display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
-.uspp-card-desc { color: var(--uspp-fg-secondary); font-size: 13px; line-height: 1.4; }
-.uspp-card-authors { color: var(--uspp-fg-tertiary); font-size: 12px; }
-.uspp-icon-badge { display: inline-flex; color: var(--uspp-fg-secondary); }
-.uspp-icon-badge.uspp-warn { color: var(--uspp-fg-danger); }
+.uspp-card-body { padding: 10px 12px; flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.uspp-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.uspp-card-title { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; overflow: hidden; }
+.uspp-card-name { font-weight: 500; font-size: 14px; line-height: 20px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uspp-card-controls { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.uspp-card-controls .uspp-btn-icon { width: 24px !important; height: 24px !important; min-width: 24px; min-height: 24px; }
+.uspp-card-desc {
+	color: var(--uspp-fg-secondary); font-size: 13px; line-height: 1.5; margin-top: 4px;
+	display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.uspp-card-separator { height: 1px; background: var(--uspp-border-l1); flex-shrink: 0; }
+.uspp-card-footer { display: flex; align-items: center; padding: 6px 12px; gap: 6px; min-width: 0; }
+.uspp-card-authors { color: var(--uspp-fg-tertiary); font-size: 11.2px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uspp-icon-badge {
+	display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+	width: 24px; height: 24px; border-radius: 8px; color: var(--uspp-fg-primary);
+	background: color-mix(in srgb, var(--uspp-fg-primary) 10%, transparent);
+}
+.uspp-icon-badge.uspp-warn { color: var(--uspp-fg-danger); background: color-mix(in srgb, var(--uspp-fg-danger) 12%, transparent); }
 .uspp-site-badge { font-size: 11px; padding: 0 6px; border-radius: 6px; color: var(--uspp-fg-secondary); border: 1px solid var(--uspp-border-l1); white-space: nowrap; flex-shrink: 0; }
-.uspp-switch { position: relative; width: 44px; height: 24px; border-radius: 9999px; background: var(--uspp-surface-l3); border: none; cursor: pointer; flex-shrink: 0; padding: 0; transition: background .15s; }
-.uspp-switch[data-checked="true"] { background: var(--uspp-fg-primary); }
-.uspp-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: var(--uspp-surface-base); transition: transform .15s; }
-.uspp-switch[data-checked="true"]::after { transform: translateX(20px); }
+.uspp-switch { position: relative; width: 36px; height: 20px; border-radius: 9999px; background: var(--uspp-surface-l3); border: none; cursor: pointer; flex-shrink: 0; padding: 0; transition: background .15s; }
+.uspp-switch[data-checked="true"] { background: var(--sand-fill-accent, var(--cursor-bg-blue-primary, #0a84ff)); }
+.uspp-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; }
+.uspp-switch[data-checked="true"]::after { transform: translateX(16px); }
 .uspp-switch:disabled { opacity: .5; cursor: not-allowed; }
 .uspp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: 9999px; border: 1px solid var(--uspp-border-l2); background: transparent; color: var(--uspp-fg-primary); font: inherit; font-weight: 500; cursor: pointer; white-space: nowrap; }
 .uspp-btn:hover:not(:disabled) { background: var(--uspp-button-ghost-hover); }
@@ -409,7 +420,7 @@ function iconButton(
 			disabled: opts.disabled === true,
 			onClick: opts.onClick,
 		},
-		strokeIcon(h, opts.paths, 16, opts.filled === true ? "currentColor" : "none"),
+		strokeIcon(h, opts.paths, 14, opts.filled === true ? "currentColor" : "none"),
 	);
 }
 
@@ -442,48 +453,53 @@ export function renderPluginCard(h: H, plugin: PluginRowModel, handlers: PluginC
 		{ className: "uspp-card", "data-bgb-plugin": plugin.id, "data-failed": String(failed), key: plugin.key },
 		h(
 			"div",
-			{ className: "uspp-card-head" },
+			{ className: "uspp-card-body" },
 			h(
 				"div",
-				{ className: "uspp-card-title" },
-				h("span", { className: "uspp-icon-badge" }, strokeIcon(h, pluginIcon(plugin.id), 18)),
-				h("span", { className: "uspp-card-name" }, plugin.name),
-				failed && h("span", { className: "uspp-icon-badge uspp-warn" }, strokeIcon(h, WARN_PATHS, 14)),
-			),
-			h(
-				"div",
-				{ className: "uspp-card-controls" },
-				iconButton(h, {
-					paths: STAR_PATHS,
-					label: starred ? "Unstar" : "Star",
-					active: starred,
-					filled: starred,
-					onClick: () => handlers.onStar(plugin),
-				}),
-				iconButton(h, {
-					paths: PIN_PATHS,
-					label: pinned ? "Unpin" : "Pin",
-					active: pinned,
-					filled: pinned,
-					onClick: () => handlers.onPin(plugin),
-				}),
-				hasConfig &&
+				{ className: "uspp-card-head" },
+				h(
+					"div",
+					{ className: "uspp-card-title" },
+					h("span", { className: "uspp-icon-badge" }, strokeIcon(h, pluginIcon(plugin.id), 14)),
+					h("span", { className: "uspp-card-name" }, plugin.name),
+					failed && h("span", { className: "uspp-icon-badge uspp-warn" }, strokeIcon(h, WARN_PATHS, 14)),
+				),
+				h(
+					"div",
+					{ className: "uspp-card-controls" },
 					iconButton(h, {
-						paths: SLIDERS_PATHS,
-						label: "Configure",
-						disabled: handlers.offline,
-						onClick: () => handlers.onConfigure(plugin),
+						paths: STAR_PATHS,
+						label: starred ? "Unstar" : "Star",
+						active: starred,
+						filled: starred,
+						onClick: () => handlers.onStar(plugin),
 					}),
-				renderSwitch(h, {
-					checked: plugin.enabled,
-					disabled: handlers.busy(`toggle:${plugin.id}`) || !plugin.canToggle,
-					label: plugin.name,
-					onChange: (enabled) => handlers.onToggle(plugin, enabled),
-				}),
+					iconButton(h, {
+						paths: PIN_PATHS,
+						label: pinned ? "Unpin" : "Pin",
+						active: pinned,
+						filled: pinned,
+						onClick: () => handlers.onPin(plugin),
+					}),
+					hasConfig &&
+						iconButton(h, {
+							paths: SLIDERS_PATHS,
+							label: "Configure",
+							disabled: handlers.offline,
+							onClick: () => handlers.onConfigure(plugin),
+						}),
+					renderSwitch(h, {
+						checked: plugin.enabled,
+						disabled: handlers.busy(`toggle:${plugin.id}`) || !plugin.canToggle,
+						label: plugin.name,
+						onChange: (enabled) => handlers.onToggle(plugin, enabled),
+					}),
+				),
 			),
+			h("div", { className: "uspp-card-desc" }, plugin.description),
 		),
-		h("div", { className: "uspp-card-desc" }, plugin.description),
-		authors !== "" && h("div", { className: "uspp-card-authors" }, authors),
+		h("div", { className: "uspp-card-separator", "aria-hidden": true }),
+		h("div", { className: "uspp-card-footer" }, h("div", { className: "uspp-card-authors" }, authors === "" ? "\u00A0" : authors)),
 	);
 }
 
