@@ -1,6 +1,6 @@
 import { definePlugin } from "@better-grok-bot/sdk";
 
-const ENTRY_CHUNK = /^assets\/index-[\w-]+\.js$/;
+const ENTRY_CHUNK = /^assets\/index\.eager-app-[\w-]+\.js$/;
 const APP_CHUNK = /^assets\/index\.eager-app-[\w-]+\.js$/;
 
 /**
@@ -26,15 +26,14 @@ export default definePlugin({
 			// The sections store's computer adapter. The runtime answers from its own copy when the computer has none.
 			id: "sections-storage",
 			file: APP_CHUNK,
-			find: /box:\{get:\(\)=>(\i\.desktop\.getHostSidebarSections\(\)),set:(\i)=>(\i\.desktop\.setHostSidebarSections\(\{sections:\2\}\))\}/,
+			find: /box:\{get:(\i)=>(\i)\.getHostSidebarSections\(\{accountSlot:\1\}\),set:\((\i),(\i),(\i)\)=>\2\.setHostSidebarSections\(\{sections:\3,base:\5,accountSlot:\4\}\)\}/,
 			replace:
-				'box:{get:()=>(p=>globalThis.BetterGrokBot?.call("sidebar-folders","readSections",p)??p)($1),set:$2=>(p=>globalThis.BetterGrokBot?.call("sidebar-folders","writeSections",p,$2)??p)($3)}',
+				'box:{get:$1=>(p=>globalThis.BetterGrokBot?.call("sidebar-folders","readSections",p)??p)($2.getHostSidebarSections({accountSlot:$1})),set:($3,$4,$5)=>(p=>globalThis.BetterGrokBot?.call("sidebar-folders","writeSections",p,$3)??p)($2.setHostSidebarSections({sections:$3,base:$5,accountSlot:$4}))}',
 		},
 		{
-			// Default name of a new section.
 			id: "default-name",
 			file: APP_CHUNK,
-			find: /(\i="__agents__",\i="Unassigned",\i=)"New section"/,
+			find: /(\i=`__agents__`,\i=`Unassigned`,\i=)`New section`/,
 			replace: '$1"New folder"',
 		},
 		{
@@ -67,14 +66,14 @@ export default definePlugin({
 			// The runtime reorders them by the section's saved `agentIds`.
 			id: "section-agent-order",
 			file: APP_CHUNK,
-			find: /(isCollapsed:(\i)\.isCollapsed,agents:)(\i\.filter\((\i)=>\2\.id===\i\?!\i\.has\(\4\.id\):\i\.get\(\4\.id\)===\2\.id\))/,
+			find: /(isCollapsed:(\i)\.isCollapsed,agents:)(\i\.filter\((\i)=>\2\.id===`__agents__`\?!\i\.has\(\4\.id\):\i\.get\(\4\.id\)===\2\.id\))/,
 			replace: '$1(a=>globalThis.BetterGrokBot?.call("sidebar-folders","orderSectionAgents",$2,a)??a)($3)',
 		},
 		{
 			// Sidebar drag-over: tells the runtime what is dragged over which drop target (for the insertion line).
 			id: "drag-over",
 			file: ENTRY_CHUNK,
-			find: /(\i)\((\i)\?\.kind==="section"\?\2\.id:null\);const (\i)=(\i)\?\.kind==="pinned-tile";/,
+			find: /(\i)\((\i)\?\.kind===`section`\?\2\.id:null\);let (\i)=(\i)\?\.kind===`pinned-tile`;/,
 			replace: 'globalThis.BetterGrokBot?.call("sidebar-folders","dragOver",$4,$2);$&',
 		},
 		{
@@ -82,7 +81,7 @@ export default definePlugin({
 			// inserts it at the pointer instead (returns undefined to keep the app's behaviour).
 			id: "drop-in-section",
 			file: ENTRY_CHUNK,
-			find: /if\((\i)\.kind==="agent"&&(\i)\.kind==="section-body"\)\{(\i)\(\1\.id,\2\.id\);return\}/,
+			find: /if\((\i)\.kind===`agent`&&(\i)\.kind===`section-body`\)\{(\i)\(\1\.id,\2\.id\);return}/,
 			replace:
 				'if($1.kind==="agent"&&$2.kind==="section-body"){globalThis.BetterGrokBot?.call("sidebar-folders","dropAgent",$1.id,$2.id)??$3($1.id,$2.id);return}',
 		},

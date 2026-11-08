@@ -1,7 +1,8 @@
 import { definePlugin } from "@better-grok-bot/sdk";
+import { SYSTEM_CHILDREN_FIND, injectAfterMicrophone } from "../settings-inject.ts";
 
-const ENTRY_CHUNK = /^assets\/index-[\w-]+\.js$/;
-const SETTINGS_VIEW_CHUNK = /^assets\/chunk-view-[\w-]+\.js$/;
+const ENTRY_CHUNK = /^assets\/index\.eager-app-[\w-]+\.js$/;
+const SETTINGS_VIEW_CHUNK = /^assets\/chunk-(?:view|general-pane)-[\w-]+\.js$/;
 
 export default definePlugin({
 	id: "startup",
@@ -17,7 +18,7 @@ export default definePlugin({
 			// defined only while that bot can be called and no call is up.
 			id: "composer-voice-call",
 			file: ENTRY_CHUNK,
-			find: /((\i)=\i\.currentAgent,\i=\i\("grok_bot_multiplayer"\)[^]*?)(\i)=(\i\.kind==="idle"&&\i!==null\?\i:void 0),/,
+			find: /((\i)=\i\.currentAgent,[^]*?Nf\(`grok_bot_multiplayer`\)[^]*?)(\i)=(\i\.kind===`idle`&&\i!==null\?\i:void 0),/,
 			replace: '$1$3=globalThis.BetterGrokBot?.call("startup","offerVoiceCall",$2?.id??null,$4)??($4),',
 		},
 		{
@@ -27,9 +28,8 @@ export default definePlugin({
 			// gated on "grok_bot_network_debugger".
 			id: "settings-rows",
 			file: SETTINGS_VIEW_CHUNK,
-			find: /(anchorId:"microphone",variant:"card",children:\i\.jsx\((\i),\{"aria-label":\i,onValueChange:\i,options:\i,placement:"bottom-end",size:"lg",value:\i,variant:"ghost"\}\)[^]*?\.jsx\((\i),\{isChecked:\i,isDisabled:\i,label:\i,onToggle:\i,size:"md"\}\)(?:(?!isChecked:)[^])*?\.jsx\((\i),\{anchorId:"hardware-acceleration",description:[^]*?=(\i)\.useState\(!1\)[^]*?\("grok_bot_network_debugger"\)[^]*?(\i)\.jsxs\(\i,\{title:\i,children:\[\i,)/,
-			replace:
-				'$1globalThis.BetterGrokBot?$6.jsx(globalThis.BetterGrokBot.component("startup","SettingsRows",{React:$5,jsx:$6.jsx,Row:$4,Toggle:$3,Select:$2}),{}):null,',
+			find: SYSTEM_CHILDREN_FIND,
+			replace: injectAfterMicrophone("startup", "SettingsRows", (p) => ({React:p.react,Row:p.row,Toggle:p.toggle,Select:p.select})),
 		},
 	],
 });

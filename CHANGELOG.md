@@ -4,6 +4,12 @@ All notable changes to Better Grok Bot are documented here.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-08
+
+### Fixed
+
+- Core hooks and bundled plugins retargeted for Grok Bot 0.79.3 (React 19.3 template-literal version, `createElement(Context)` client, Lingui in the common chunk, Settings General in `chunk-general-pane`, backtick `sand-*` class helpers, `(0,jsx)(...)` calls). `bgb check --asar` against 0.79.3 reports every core hook and bundled plugin active.
+
 ### Changed
 
 - The bundled plugins match the README artwork: one violet-to-cyan accent that themes can override (`--bgb-brand-violet`, `--bgb-brand-indigo`, `--bgb-brand-cyan`, `--bgb-brand-gradient`) on top of the app's own colours, so light mode keeps working.

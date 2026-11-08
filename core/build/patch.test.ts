@@ -127,20 +127,21 @@ test("function replacers receive groups, named groups, offset, text and file", a
 
 test("the bgb-settings core hook's function replacer works through PatchMatch", async () => {
 	const chunk = [
-		'const id="sand-settings-general";',
+		"const id=`sand-settings-general`;",
 		"function G(){",
-		"const z=a.jsx(xe,{title:t,children:c});",
-		'a.jsx(se,{anchorId:"one"});a.jsx(se,{anchorId:"two"});',
-		'a.jsx(Ce,{isChecked:i,isDisabled:d,label:l,onToggle:o,size:"md"});',
-		'a.jsx(Pe,{"aria-label":q,disabled:w,onValueChange:v,options:p,placement:"bottom-end",size:"lg",value:z});',
-		'a.jsx(ue,{onClick:k,size:"md",style:T.body2,type:"button",variant:"secondary"});',
-		'return a.jsxs("div",{className:n,children:[d,o,r]})}',
+		"(0,a.jsx)(fn,{anchorId:`account`,title:t,children:c});",
+		"(0,a.jsx)(X,{anchorId:`one`,description:d});(0,a.jsx)(X,{anchorId:`two`,description:e});",
+		"(0,a.jsx)(bt,{isChecked:i,isDisabled:d,label:l,onToggle:o,size:`md`});",
+		'(0,a.jsx)(ce,{"aria-label":q,disabled:w,onValueChange:v,options:p,placement:`bottom-end`,size:`lg`,value:z});',
+		"(0,a.jsx)(q,{onClick:k,size:`md`,style:T.body2,type:`button`,variant:`secondary`});",
+		"return (0,a.jsxs)(`div`,{className:n,children:[d,o,r]})",
+		"}",
 	].join("");
-	const ws = await workspace({ "assets/chunk-view-abc123.js": chunk, "assets/chunk-view-other.js": "nothing here" });
+	const ws = await workspace({ "assets/chunk-general-pane-abc123.js": chunk, "assets/chunk-view-other.js": "nothing here" });
 	const attempt = await ws.attempt(settingsHook.patches ?? []);
 	expect(attempt.errors).toEqual([]);
-	expect(attempt.edits.get("assets/chunk-view-abc123.js")).toContain(
-		'children:[d,o,r,globalThis.BetterGrokBot?.settingsSection({Section:xe,Row:se,Toggle:Ce,Select:Pe,Button:ue,textStyles:T})??null]})}',
+	expect(attempt.edits.get("assets/chunk-general-pane-abc123.js")).toContain(
+		'children:[d,o,r,globalThis.BetterGrokBot?.settingsSection({Section:fn,Row:X,Toggle:bt,Select:ce,Button:q,textStyles:T})??null]})}',
 	);
 });
 

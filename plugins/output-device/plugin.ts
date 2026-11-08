@@ -1,7 +1,8 @@
 import { definePlugin } from "@better-grok-bot/sdk";
+import { SYSTEM_CHILDREN_FIND, injectAfterMicrophone } from "../settings-inject.ts";
 
 const APP_CHUNK = /^assets\/index\.eager-app-[\w-]+\.js$/;
-const SETTINGS_VIEW_CHUNK = /^assets\/chunk-view-[\w-]+\.js$/;
+const SETTINGS_VIEW_CHUNK = /^assets\/chunk-(?:view|general-pane)-[\w-]+\.js$/;
 
 export default definePlugin({
 	id: "output-device",
@@ -15,7 +16,7 @@ export default definePlugin({
 			// Voice call audio engine: the context that plays every speech chunk.
 			id: "voice-call-context",
 			file: APP_CHUNK,
-			find: /(\i)=new AudioContext\((\{sampleRate:\i\})\);(const \i=\1\.createMediaStreamSource\(\i\),\i=\1\.createScriptProcessor\()/,
+			find: /(\i)=new AudioContext\((\{sampleRate:\i\})\);(let \i=\1\.createMediaStreamSource\(\i\),\i=\1\.createScriptProcessor\()/,
 			replace:
 				'$1=globalThis.BetterGrokBot?.call("output-device","createAudioContext",$2,"voice-call")??new AudioContext($2);$3',
 		},
@@ -31,7 +32,7 @@ export default definePlugin({
 			// `voicePreviewPlayer`: plays the greeting sample when a voice is previewed in the voice picker.
 			id: "voice-preview-element",
 			file: APP_CHUNK,
-			find: /const (\i)=new Audio;(return \1\.addEventListener\("ended",)/,
+			find: /let (\i)=new Audio;(return \1\.addEventListener\(`ended`,)/,
 			replace: 'const $1=new Audio;globalThis.BetterGrokBot?.call("output-device","trackMediaElement",$1,"voice-preview");$2',
 		},
 		{
@@ -39,9 +40,8 @@ export default definePlugin({
 			// by making the Microphone row component return both rows.
 			id: "speaker-settings-row",
 			file: SETTINGS_VIEW_CHUNK,
-			find: /(\{_:(\i)\}=\i\(\),\{inputDeviceId:\i\}=\i\(\),[^]*?=(\i)\.useSyncExternalStore\([^]*?(\i)\.jsx\((\i),\{anchorId:"microphone",variant:"card",children:\4\.jsx\((\i),\{"aria-label":\i,onValueChange:\i,options:\i,placement:"bottom-end",size:"lg",value:\i,variant:"ghost"\}\)\}\),[^{}]*?\):(\i)=\i\[\d+\],)\7\}/,
-			replace:
-				'$1globalThis.BetterGrokBot?$4.jsxs($4.Fragment,{children:[$7,$4.jsx(globalThis.BetterGrokBot.component("output-device","SpeakerRow",{React:$3,jsx:$4.jsx,Row:$5,Select:$6,translate:$2}),{})]}):$7}',
+			find: SYSTEM_CHILDREN_FIND,
+			replace: injectAfterMicrophone("output-device", "SpeakerRow", (p) => ({React:p.react,Row:p.row,Select:p.select})),
 		},
 	],
 });

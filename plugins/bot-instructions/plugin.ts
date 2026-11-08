@@ -1,6 +1,6 @@
 import { definePlugin } from "@better-grok-bot/sdk";
 
-const ENTRY_CHUNK = /^assets\/index-[\w-]+\.js$/;
+const ENTRY_CHUNK = /^assets\/index\.eager-app-[\w-]+\.js$/;
 
 /**
  * Brings back a per-bot instructions field for your own bots.
@@ -24,9 +24,9 @@ export default definePlugin({
 			// render the plugin's editor instead.
 			id: "overview-instructions",
 			file: ENTRY_CHUNK,
-			find: /(\i)\?(\i)\.jsx\((\i),\{agent:(\i),onDescriptionChange:(\i)\}\):null,(\i\?\i\.teamOverview:null)/,
+			find: /(\i)\?\(0,(\i)\.jsx\)\((\i),\{agent:(\i),onDescriptionChange:(\i)\}\):null/,
 			replace:
-				'$1?$2.jsx($3,{agent:$4,onDescriptionChange:$5}):globalThis.BetterGrokBot?$2.jsx(globalThis.BetterGrokBot.component("bot-instructions","Editor",{jsx:$2.jsx}),{agent:$4}):null,$6',
+				'$1?$2.jsx($3,{agent:$4,onDescriptionChange:$5}):globalThis.BetterGrokBot?$2.jsx(globalThis.BetterGrokBot.component("bot-instructions","Editor",{jsx:$2.jsx}),{agent:$4}):null',
 		},
 	],
 });

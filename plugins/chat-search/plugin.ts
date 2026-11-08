@@ -1,6 +1,6 @@
 import { definePlugin, type PatchMatch } from "@better-grok-bot/sdk";
 
-const ENTRY_CHUNK = /^assets\/index-[\w-]+\.js$/;
+const ENTRY_CHUNK = /^assets\/index\.eager-app-[\w-]+\.js$/;
 
 function sessionHook(match: PatchMatch, owner: string): string {
 	const escaped = owner.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -29,7 +29,7 @@ export default definePlugin({
 		{
 			id: "header-search-button",
 			file: ENTRY_CHUNK,
-			find: /className:\i\("sand-chat-header__controls",\i\.className\),style:\i\.style,children:\[(?=\i==null\?null:(\i)\.jsx\()/,
+			find: /className:\i\(`sand-chat-header__controls`,\i\.className\),style:\i\.style,children:\[(?=\i==null\?null:\(0,(\i)\.jsx\)\()/,
 			replace: '$&globalThis.BetterGrokBot?$1.jsx(globalThis.BetterGrokBot.component("chat-search","SearchButton",{jsx:$1.jsx}),{}):null,',
 			expect: 1,
 		},
@@ -37,7 +37,7 @@ export default definePlugin({
 			// Only the main conversation mount: task-thread finders have a different history contract.
 			id: "native-finder-history",
 			file: ENTRY_CHUNK,
-			find: /(\i)\.jsx\((\i),\{entries:(\i)\.entries,focusNonce:(\i)\.findInChat\.focusNonce,onClose:\4\.findInChat\.close,transcriptHandleRef:(\i)\},\3\.transcriptPlaneKey\)/,
+			find: /\(0,(\i)\.jsx\)\((\i),\{entries:(\i)\.entries,focusNonce:(\i)\.findInChat\.focusNonce,onClose:\4\.findInChat\.close,transcriptHandleRef:(\i)\},\3\.transcriptPlaneKey\)/,
 			replace: (match: PatchMatch) => {
 				const [jsx, finder, transcript, owner, handle] = match.groups;
 				if (!jsx || !finder || !transcript || !owner || !handle) throw new Error("native finder mount is incomplete");
@@ -50,7 +50,7 @@ export default definePlugin({
 			// The native counter renders "1/3"; the search pill reads "1 of 3" (also what screen readers announce).
 			id: "match-counter-wording",
 			file: ENTRY_CHUNK,
-			find: /(\.\.\.\i\(\i\.counter,\i\.label,\i===0&&\i\.counterEmpty\),children:\[\i,)"\/"(,\i\])/,
+			find: /(\.\.\.\i\(\i\.counter,\i\.label,\i===0&&\i\.counterEmpty\),children:\[\i,)`\/`(,\i\])/,
 			replace: '$1" of "$2',
 			expect: 1,
 		},

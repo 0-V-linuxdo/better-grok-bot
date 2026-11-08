@@ -11,8 +11,9 @@ export const clientHook = definePlugin({
 		{
 			id: "sand-client",
 			file: /^assets\/index\.eager-app-[\w-]+\.js$/,
-			find: /(\.createElement\((\i)\.Provider,\{value:)(\i)\.client(\},\3\.children\)\}function \i\(\)\{const \i=\i\.useContext\(\2\);return \i\(\i!=null,"useSandClient:)/,
-			replace: "$1globalThis.BetterGrokBot?.provideClient($3.client)??$3.client$4",
+			// 0.79.3: createElement(Context, {value: e.client}, …) — no `.Provider`.
+			find: /(\(0,\i\.createElement\)\(\i,\{value:)(\i)\.client/,
+			replace: "$1globalThis.BetterGrokBot?.provideClient($2.client)??$2.client",
 			expect: 1,
 		},
 	],

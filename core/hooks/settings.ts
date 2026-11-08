@@ -4,11 +4,18 @@ const I = IDENTIFIER_PATTERN;
 const escape = (pattern: string): RegExp => new RegExp(pattern.replaceAll("\\i", I), "g");
 
 /** Primitive name → pattern whose group 1 captures its identifier (group 2 for Button = text styles). */
-const SECTION = escape(String.raw`\.jsx\((\i),\{title:\i,children:\i\}\)`);
-const ROW = escape(String.raw`\.jsx\((\i),\{anchorId:"`);
-const TOGGLE = escape(String.raw`\.jsx\((\i),\{isChecked:\i,isDisabled:\i,label:\i,onToggle:\i,size:"md"\}\)`);
-const SELECT = escape(String.raw`\.jsx\((\i),\{"aria-label":\i,disabled:\i,onValueChange:\i,options:\i,placement:"bottom-end",size:"lg",value:`);
-const BUTTON = escape(String.raw`\.jsx\((\i),\{onClick:\i,size:"md",style:(\i)\.body2,type:"button",variant:"secondary"`);
+const SECTION = escape(String.raw`\.jsx\)\((\i),\{anchorId:` + "`[^`]+`" + String.raw`,title:`);
+const ROW = escape(String.raw`\.jsx\)\((\i),\{anchorId:` + "`[^`]+`" + String.raw`,description:`);
+const TOGGLE = escape(String.raw`\.jsx\)\((\i),\{[^{}]*isChecked:\i,isDisabled:`);
+const SELECT = escape(String.raw`\.jsx\)\((\i),\{"aria-label":\i,[^{}]*onValueChange:\i,[^{}]*options:\i,[^{}]*placement:`);
+const BUTTON = escape(
+	String.raw`\.jsx\)\((\i),\{onClick:\i,size:` +
+		"`md`" +
+		String.raw`,style:(\i)\.body2,type:` +
+		"`button`" +
+		String.raw`,variant:` +
+		"`secondary`",
+);
 
 /** The single identifier every match of `pattern` captures in `group`; throws unless there is ≥ 1 match and all agree. */
 function unique(name: string, pattern: RegExp, text: string, group = 1): string {
@@ -43,8 +50,8 @@ export const settingsHook = definePlugin({
 	patches: [
 		{
 			id: "general-section",
-			file: /^assets\/chunk-view-[\w-]+\.js$/,
-			find: /("sand-settings-general"[^]*?\.jsxs\("div",\{className:\i,children:\[)((?:\i,)*\i)(\]\}\))/,
+			file: /^assets\/chunk-(?:view|general-pane)-[\w-]+\.js$/,
+			find: /(`sand-settings-general`[^]*?\.jsxs\)\(`div`,\{className:\i,children:\[)((?:\i,)*\i)(\]\}\))/,
 			replace: settingsReplace,
 			expect: 1,
 		},

@@ -11,8 +11,9 @@ export const reactHook = definePlugin({
 		{
 			id: "react-namespace",
 			file: /^assets\/index\.eager-common-[\w-]+\.js$/,
-			find: /((\i)\.useTransition=function\(\)\{return \i\.H\.useTransition\(\)\},\2\.version="\d+\.\d+\.\d+[^"]*",)\2\}/,
-			replace: "$1(globalThis.BetterGrokBot?.provideReact($2),$2)}",
+			// 0.79.3 / React 19.3: version is a template literal; the factory mutates `e` and closes.
+			find: /((\i)\.useTransition=function\(\)\{return \i\.H\.useTransition\(\)\},\2\.version=`\d+\.\d+\.\d+[^`]*`)/,
+			replace: "$1,globalThis.BetterGrokBot?.provideReact($2)",
 			expect: 1,
 		},
 	],
