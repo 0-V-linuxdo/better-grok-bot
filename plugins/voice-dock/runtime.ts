@@ -132,12 +132,10 @@ function createVoiceDock(ctx: PluginContext) {
 	const subscribeClient = (onChange: () => void): (() => void) => ctx.app.onClient(onChange);
 	const readClient = (): unknown => ctx.app.client;
 
-	/** Hook, called from the chat view's render: true while a dock is mounted. */
-	const useDocked = (): boolean => {
-		const React = ctx.app.React;
-		if (React === undefined) return false;
-		return React.useSyncExternalStore(subscribeDocks, readDocked);
-	};
+	/** Plain read, not a React hook. The chat-popover patch lands inside a React
+	 *  Compiler cache ternary (`t[n]!==…?(ct=useDocked()?…):ct=t[n]`), so a Hook
+	 *  here is conditional and crashes the app with minified error #311. */
+	const useDocked = (): boolean => readDocked();
 
 	const Dock: ComponentFactory = ({ React, jsx, Popover }) => {
 		if (Popover === undefined) throw new TypeError("Dock needs the app's voice-call popover component");

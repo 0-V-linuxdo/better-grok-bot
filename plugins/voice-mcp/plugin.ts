@@ -29,7 +29,7 @@ export default definePlugin({
 			file: APP_CHUNK,
 			find: /case`response\.function_call_arguments\.done`:\{let (\i)=(\i)\((\i)\.call_id\),(\i)=\2\(\3\.name\);return \1===null\|\|\4===null\?null:\{type:(\i),call:(\{callId:\1,name:\4,argumentsJson:\2\(\3\.arguments\)\?\?`[^`]+`\})\}/,
 			replace:
-				'case`response.function_call_arguments.done`:{let $1=$2($3.call_id),$4=$2($3.name);return $1===null||$4===null?null:{type:$5,call:globalThis.BetterGrokBot?.call("voice-mcp","capture",$6,$3.arguments)??$6}}',
+				'case`response.function_call_arguments.done`:{let $1=$2($3.call_id),$4=$2($3.name);return $1===null||$4===null?null:{type:$5,call:globalThis.BetterGrokBot?.call("voice-mcp","capture",$6,$3.arguments)??$6}',
 			expect: 1,
 		},
 		{

@@ -17,7 +17,7 @@ export default definePlugin({
 			// rendered as its preceding sibling in the same children array, so it sits directly above the pill.
 			id: "sidebar-usage-bar",
 			file: ENTRY_CHUNK,
-			find: /(\i)\.jsxs\)\(`div`,\{"data-action-engaged":\i===`update`\|\|void 0,"data-sidebar-account":!0,/,
+			find: /\(0,(\i)\.jsxs\)\(`div`,\{"data-action-engaged":\i===`update`\|\|void 0,"data-sidebar-account":!0,/,
 			replace:
 				'globalThis.BetterGrokBot?$1.jsx(globalThis.BetterGrokBot.component("weekly-usage","SidebarBar",{jsx:$1.jsx}),{}):null,$&',
 		},

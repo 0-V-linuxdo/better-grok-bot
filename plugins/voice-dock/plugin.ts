@@ -28,7 +28,7 @@ export default definePlugin({
 			// and the account row. The dock renders the app's own voice-call popover component.
 			id: "sidebar-dock",
 			file: ENTRY_CHUNK,
-			find: /(\i)\.jsxs\)\(`div`,\{"data-action-engaged":\i===`update`\|\|void 0,"data-sidebar-account":!0,/,
+			find: /\(0,(\i)\.jsxs\)\(`div`,\{"data-action-engaged":\i===`update`\|\|void 0,"data-sidebar-account":!0,/,
 			replace: (m: PatchMatch) => {
 				const jsx = m.groups[0] ?? "";
 				const popover = popoverComponent(m.text);

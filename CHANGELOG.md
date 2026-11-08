@@ -9,6 +9,9 @@ All notable changes to Better Grok Bot are documented here.
 ### Fixed
 
 - Core hooks and bundled plugins retargeted for Grok Bot 0.79.3 (React 19.3 template-literal version, `createElement(Context)` client, Lingui in the common chunk, Settings General in `chunk-general-pane`, backtick `sand-*` class helpers, `(0,jsx)(...)` calls). `bgb check --asar` against 0.79.3 reports every core hook and bundled plugin active.
+- Voice MCP `capture-completed-arguments` no longer emits an extra `}`, which was a `SyntaxError: Unexpected token 'case'` that blanked the renderer.
+- Voice Dock `useDocked` is a plain read, not a Hook: 0.79.3's React Compiler caches the chat-popover site, so `useSyncExternalStore` there threw minified error #311 ("Should have a queue") and the app error boundary.
+- Voice Dock and Weekly Usage insert as real siblings of the account row by matching `(0,jsx.jsxs)(`div`,{"data-action-engaged"…` instead of splicing inside the `(0, …)` comma call.
 
 ### Changed
 
