@@ -54,8 +54,10 @@ export function createServicesClient(bridge: ServicesBridge, log: PluginLogger):
 	const reportedUnsupported = new Set<string>();
 	let keys: ServiceStateInfo<KeysState> = { state: "error", detail: NOT_CONNECTED };
 	let media: ServiceStateInfo<MediaState> = { state: "error", detail: NOT_CONNECTED };
-	let sentCodes = "";
-	let sentLevel = 1;
+	let sentCodes: string | null = null;
+	let sentLevel: number | null = null;
+	let sendingCodes: string | null = null;
+	let sendingLevel: number | null = null;
 
 	const safely = <A>(listener: (arg: A) => void, arg: A, what: string): void => {
 		try {
@@ -69,32 +71,50 @@ export function createServicesClient(bridge: ServicesBridge, log: PluginLogger):
 	const duckLevel = (): number => Math.min(1, ...duckLevels.values());
 
 	const sendWatch = (codes: string[]): void => {
-		sentCodes = codes.join(",");
+		const snapshot = codes.join(",");
 		if (bridge.state !== "connected") return;
+		sendingCodes = snapshot;
 		bridge.request("keys.watch", { codes }).then(
 			({ unsupported }) => {
+				sentCodes = snapshot;
+				if (sendingCodes === snapshot) sendingCodes = null;
 				const fresh = unsupported.filter((code) => !reportedUnsupported.has(code));
 				for (const code of fresh) reportedUnsupported.add(code);
 				if (fresh.length > 0) log.warn(`these keys can't be watched in the background on this OS: ${fresh.join(", ")}`);
 			},
-			(error: unknown) => log.warn(`could not update the background key watch: ${describeError(error)}`),
+			(error: unknown) => {
+				if (sendingCodes === snapshot) sendingCodes = null;
+				log.warn(`could not update the background key watch: ${describeError(error)}`);
+			},
 		);
 	};
 
 	const sendDuck = (level: number): void => {
-		sentLevel = level;
 		if (bridge.state !== "connected") return;
-		bridge.request("media.duck", { level }).catch((error: unknown) => log.warn(`could not change the music level: ${describeError(error)}`));
+		sendingLevel = level;
+		bridge.request("media.duck", { level }).then(
+			() => {
+				sentLevel = level;
+				if (sendingLevel === level) sendingLevel = null;
+			},
+			(error: unknown) => {
+				if (sendingLevel === level) sendingLevel = null;
+				log.warn(`could not change the music level: ${describeError(error)}`);
+			},
+		);
 	};
 
 	const syncWatch = (): void => {
 		const codes = watchUnion();
-		if (codes.join(",") !== sentCodes) sendWatch(codes);
+		const snapshot = codes.join(",");
+		if (snapshot === sentCodes || snapshot === sendingCodes) return;
+		sendWatch(codes);
 	};
 
 	const syncDuck = (): void => {
 		const level = duckLevel();
-		if (level !== sentLevel) sendDuck(level);
+		if (level === sentLevel || level === sendingLevel) return;
+		sendDuck(level);
 	};
 
 	const setKeys = (info: ServiceStateInfo<KeysState>): void => {
@@ -177,7 +197,10 @@ export function createServicesClient(bridge: ServicesBridge, log: PluginLogger):
 					codeWatchers.delete(watcher);
 					if (codeWatchers.size === 0 && watchers.get(code) === codeWatchers) {
 						watchers.delete(code);
-						downCodes.delete(code);
+						if (downCodes.has(code)) {
+							downCodes.delete(code);
+							safely(watcher.listener, false, `key ${code}`);
+						}
 					}
 					syncWatch();
 				};

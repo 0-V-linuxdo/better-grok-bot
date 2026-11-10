@@ -2,7 +2,7 @@ import type { Permission, Platform } from "./constants.ts";
 import type { SettingField } from "./plugin.ts";
 
 export type PluginSource = "core" | "bundled" | "community" | "dev";
-export type PluginState = "active" | "disabled" | "patch-failed" | "runtime-failed" | "invalid" | "unsupported-platform";
+export type PluginState = "loading" | "active" | "disabled" | "patch-failed" | "runtime-failed" | "invalid" | "unsupported-platform";
 
 export interface PatchResult {
 	id: string;

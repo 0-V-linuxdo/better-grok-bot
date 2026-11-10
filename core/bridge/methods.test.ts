@@ -529,4 +529,23 @@ describe("sidebar.execute", () => {
 		await expect(executeSidebar()).rejects.toBe(error);
 		expect(sidebarCalls).toEqual([{ connectionId: SIDEBAR_CONNECTION.id, command: { operation: "list-folders" } }]);
 	});
+
+	test("a caller-supplied requestId is forwarded; a missing one is minted", async () => {
+		const ids: (string | undefined)[] = [];
+		handlers = create(recordingMcp(), {
+			renderers: () => renderers,
+			async requestSidebar(connectionId, command, _timeout, requestId) {
+				ids.push(requestId);
+				sidebarCalls.push({ connectionId, command });
+				return sidebarResult;
+			},
+		});
+		await executeSidebar({ command: { operation: "list-folders" }, requestId: "intent-1" });
+		await executeSidebar({ command: { operation: "list-folders" } });
+		await executeSidebar({ command: { operation: "create-folder", name: "Work" }, requestId: "intent-1" });
+		expect(ids[0]).toBe("intent-1");
+		expect(ids[1]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+		expect(ids[2]).toBe("intent-1");
+		await expect(executeSidebar({ command: { operation: "list-folders" }, requestId: "" })).rejects.toMatchObject({ code: "bad-request" });
+	});
 });

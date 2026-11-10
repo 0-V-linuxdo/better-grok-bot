@@ -48,26 +48,19 @@ function roster(client: unknown): Roster | undefined {
 	return typeof value?.updateAgent === "function" ? (value as Roster) : undefined;
 }
 
-function createBotInstructions(ctx: PluginContext) {
+export function createBotInstructions(ctx: PluginContext) {
 	const subscribeClient = (onChange: () => void): (() => void) => ctx.app.onClient(onChange);
 	const readClient = (): unknown => ctx.app.client;
 
-	const Editor: ComponentFactory = ({ React, jsx }) =>
-		function BotInstructionsEditor(props: Record<string, unknown>) {
-			const row = botRow(props.agent);
+	const Editor: ComponentFactory = ({ React, jsx }) => {
+		function Inner(props: { row: BotRow; currentId: { current: string | null } }) {
+			const { row, currentId } = props;
 			const client = React.useSyncExternalStore(subscribeClient, readClient);
-			const saved = row?.description ?? "";
+			const saved = row.description;
 			const [draft, setDraft] = React.useState<string | null>(null);
 			const [saving, setSaving] = React.useState(false);
 			const [failed, setFailed] = React.useState(false);
-			const rowId = row?.id;
-			// A different bot: drop any unsaved edit.
-			React.useEffect(() => {
-				setDraft(null);
-				setFailed(false);
-			}, [rowId]);
 
-			if (row === null || !canEdit(row)) return null;
 			const store = roster(client);
 			const text = draft ?? saved;
 			const next = draft === null ? null : pendingSave(saved, draft);
@@ -77,14 +70,17 @@ function createBotInstructions(ctx: PluginContext) {
 					if (next === null) setDraft(null);
 					return;
 				}
+				const id = row.id;
 				setSaving(true);
 				setFailed(false);
-				store.updateAgent(row.id, { name: row.name, description: next }).then(
+				store.updateAgent(id, { name: row.name, description: next }).then(
 					() => {
+						if (currentId.current !== id) return;
 						setSaving(false);
 						setDraft(null);
 					},
 					(error: unknown) => {
+						if (currentId.current !== id) return;
 						ctx.log.warn("could not save the bot's instructions", error);
 						setSaving(false);
 						setFailed(true);
@@ -172,7 +168,16 @@ function createBotInstructions(ctx: PluginContext) {
 				);
 			}
 			return jsx("section", { className: "bgb-bot-instructions", children });
+		}
+
+		return function BotInstructionsEditor(props: Record<string, unknown>) {
+			const row = botRow(props.agent);
+			const currentId = React.useRef<string | null>(null);
+			currentId.current = row?.id ?? null;
+			if (row === null || !canEdit(row)) return null;
+			return jsx(Inner, { row, currentId }, row.id);
 		};
+	};
 
 	return { Editor };
 }

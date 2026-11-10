@@ -46,6 +46,8 @@ export function stateText(state: PluginState, errors: readonly string[]): string
 			return errors[0] ?? "Invalid plugin";
 		case "unsupported-platform":
 			return "Not available on this OS";
+		case "loading":
+			return "Starting…";
 		case "active":
 		case "disabled":
 			return "";
@@ -55,8 +57,9 @@ export function stateText(state: PluginState, errors: readonly string[]): string
 /**
  * One row per non-core plugin: from the agent's status when known, else this page's manifest.
  * A plugin this page saw fail at runtime shows `runtime-failed` and its local error, whatever the
- * agent says; the failure is matched by source and id, so an invalid duplicate of the id keeps its
- * own state. Its toggle still follows the agent's state. Settings use the schema this page loaded
+ * agent says; local `loading` (awaiting `define()`) overlays agent `active` the same way. Matched by
+ * source and id, so an invalid duplicate of the id keeps its own state. Its toggle still follows the
+ * agent's enabled bit. Settings use the schema this page loaded
  * (also matched by source and id), so fields a newer build added appear only after reload. Bundled
  * plugins come first, then community and dev plugins, each by name.
  */
@@ -65,11 +68,7 @@ export function buildPluginRows(
 	manifest: readonly PluginStatus[],
 	local: readonly PluginStatus[],
 ): PluginRowModel[] {
-	const localFailures = new Map(
-		local
-			.filter((plugin) => plugin.state === "runtime-failed")
-			.map((plugin) => [`${plugin.source}:${plugin.id}`, plugin.errors[plugin.errors.length - 1]]),
-	);
+	const localById = new Map(local.map((plugin) => [`${plugin.source}:${plugin.id}`, plugin]));
 	const keys = new Map<string, number>();
 	const running = new Map(manifest.map((plugin) => [`${plugin.source}:${plugin.id}`, plugin.settings]));
 	return (agent ?? manifest)
@@ -78,9 +77,11 @@ export function buildPluginRows(
 			const identity = `${plugin.source}:${plugin.id}`;
 			const seen = keys.get(identity) ?? 0;
 			keys.set(identity, seen + 1);
-			const failedLocally = localFailures.has(identity);
-			const state: PluginState = failedLocally ? "runtime-failed" : plugin.state;
-			const localError = localFailures.get(identity);
+			const localPlugin = localById.get(identity);
+			const failedLocally = localPlugin?.state === "runtime-failed";
+			const loadingLocally = localPlugin?.state === "loading";
+			const state: PluginState = failedLocally ? "runtime-failed" : loadingLocally ? "loading" : plugin.state;
+			const localError = failedLocally ? localPlugin?.errors[localPlugin.errors.length - 1] : undefined;
 			const errors = failedLocally && localError !== undefined ? [localError] : plugin.errors;
 			const detail = stateText(state, errors);
 			const schema = running.get(identity) ?? plugin.settings;
@@ -94,7 +95,7 @@ export function buildPluginRows(
 				source: plugin.source,
 				state,
 				enabled: plugin.state !== "disabled",
-				canToggle: plugin.state !== "invalid" && plugin.state !== "unsupported-platform",
+				canToggle: plugin.state !== "invalid" && plugin.state !== "unsupported-platform" && state !== "loading",
 				community: plugin.source === "community",
 				authors: [...plugin.authors],
 				granted: [...plugin.granted],

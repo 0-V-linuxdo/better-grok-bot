@@ -20,7 +20,7 @@ Install and run
   restart [--yes] [--force] [-- <app args>]
                                   Quit Grok Bot and open it with Better Grok Bot
   status [--json]                 Agent, hook, app, build, plugins, themes, update
-  doctor                          Check the install and explain problems
+  doctor [--repair]                Check the install and explain problems (--repair: reset helper circuit)
   update [--check]                Update Better Grok Bot now
   logs [-f]                       Print (or follow) the agent log
   mcp sidebar-folders             Serve sidebar folder tools over MCP stdio (voice preset)

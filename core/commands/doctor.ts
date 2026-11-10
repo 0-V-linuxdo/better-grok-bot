@@ -10,6 +10,7 @@ import type { CoreContext } from "../context.ts";
 import { errorMessage } from "../errors.ts";
 import { rendererUrl } from "../paths.ts";
 import type { AppInstall } from "../platform/types.ts";
+import { isAlive } from "../proc.ts";
 import { readState } from "../state.ts";
 import { BGB_COMPILED } from "../version.ts";
 import { parseArgs } from "./args.ts";
@@ -51,7 +52,7 @@ async function readsRendererVariable(asarPath: string): Promise<boolean> {
 
 /** Checks the install end to end and prints ✓/✗ lines with hints; exit 1 when any check fails. */
 export async function runDoctor(env: CommandEnv, argv: readonly string[]): Promise<number> {
-	parseArgs(argv, { usage: "bgb doctor" });
+	const args = parseArgs(argv, { flags: { "--repair": "boolean" }, usage: "bgb doctor [--repair]" });
 	const ctx = await env.context();
 	const { paths, platform } = ctx;
 	let failures = 0;
@@ -108,11 +109,48 @@ export async function runDoctor(env: CommandEnv, argv: readonly string[]): Promi
 
 	const pending = state.update.pending;
 	if (pending && health?.version !== pending.version) {
-		report(
-			"fail",
-			`the update to ${pending.version} has not started (${health ? `agent ${health.version} is running` : "no agent"})`,
-			`to go back to ${pending.previous}, run: "${path.join(paths.binPrevious, platform.binName())}" setup --yes`,
-		);
+		const watchdogAlive = pending.watchdogPid != null && isAlive(pending.watchdogPid);
+		if (watchdogAlive) {
+			report("warn", `update to ${pending.version} is in progress (watchdog pid ${pending.watchdogPid})`);
+		} else {
+			report(
+				"fail",
+				`the update to ${pending.version} did not start (watchdog is gone; ${health ? `agent ${health.version} is running` : "no agent"})`,
+				`to go back to ${pending.previous}, run: "${path.join(paths.binPrevious, platform.binName())}" setup --yes`,
+			);
+		}
+	}
+
+	if (state.setupResidual.length > 0) {
+		report("fail", `setup undo left residual: ${state.setupResidual.join("; ")}`, "run: bgb setup --yes");
+	}
+
+	if (state.services?.keys.state === "error") {
+		report("fail", `key helper: ${state.services.keys.detail ?? "error"}`, args.has("--repair") ? undefined : "run: bgb doctor --repair");
+	}
+	if (state.services?.media.state === "error") {
+		report("fail", `media helper: ${state.services.media.detail ?? "error"}`, args.has("--repair") ? undefined : "run: bgb doctor --repair");
+	}
+
+	if (args.has("--repair")) {
+		if (platform.id === "darwin") {
+			report("info", "macOS helper is launchd; --repair does not reset a Win/Linux child circuit");
+		} else if (!record || !health) {
+			report("info", "agent is not running; helper circuit is already cold");
+		} else {
+			try {
+				const { connectBridge } = await import("../bridge/client.ts");
+				const client = await connectBridge(paths, { timeoutMs: 5_000 });
+				try {
+					await client.request("keys.install", {});
+					report("ok", "reset helper circuit breaker and asked the helper to start");
+				} finally {
+					client.close();
+				}
+			} catch (error) {
+				report("fail", `could not reset helper: ${errorMessage(error)}`);
+			}
+		}
 	}
 
 	if (app) {

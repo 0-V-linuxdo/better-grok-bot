@@ -92,6 +92,19 @@ describe("plugin rows", () => {
 		]);
 		expect(rows[3]?.fields.map((field) => field.name)).toEqual(["on"]);
 	});
+
+	test("loading is on but not togglable", () => {
+		const [row] = buildPluginRows(null, [pluginStatus({ id: "a", name: "A", state: "loading" })], []);
+		expect(row).toMatchObject({ enabled: true, canToggle: false, description: "Starting…" });
+	});
+
+	test("local loading overlays the agent's active state", () => {
+		const agent = [pluginStatus({ id: "startup", name: "Startup", description: "Starts voice." })];
+		const local = [pluginStatus({ id: "startup", state: "loading" })];
+		const [row] = buildPluginRows(agent, [], local);
+		expect(row).toMatchObject({ enabled: true, canToggle: false, state: "loading" });
+		expect(row?.description).toContain("Starting…");
+	});
 });
 
 describe("theme rows and confirmations", () => {

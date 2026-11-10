@@ -111,10 +111,20 @@ pub fn run_key_sequence(mut bridge: Bridge, press_alt_right: impl Fn(), release_
 	let hello = bridge.expect(Duration::from_secs(5));
 	assert_eq!(hello["type"], "hello");
 	assert_eq!(hello["protocol"], 4);
-	assert_eq!(hello["keys"], "granted");
 	assert!(hello["codes"].as_array().unwrap().iter().any(|code| code == "AltRight"));
-
-	bridge.watch(&["AltRight"]);
+	#[cfg(windows)]
+	{
+		assert_eq!(hello["keys"], "denied");
+		bridge.watch(&["AltRight"]);
+		let access = bridge.expect(Duration::from_secs(5));
+		assert_eq!(access["type"], "access");
+		assert_eq!(access["keys"], "granted");
+	}
+	#[cfg(not(windows))]
+	{
+		assert_eq!(hello["keys"], "granted");
+		bridge.watch(&["AltRight"]);
+	}
 	settle();
 	press_alt_right();
 	assert_eq!(

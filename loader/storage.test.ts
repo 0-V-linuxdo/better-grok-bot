@@ -99,26 +99,34 @@ describe("storage persistence", () => {
 	});
 
 	test.each([
-		{ operation: "writes", value: { folders: ["Session only"], omitted: undefined }, expected: { folders: ["Session only"] } },
-		{ operation: "removals", value: undefined, expected: null },
-	])("default $operation publish session-only state on persistence failure", ({ value, expected }) => {
+		{ operation: "writes", value: { folders: ["Session only"], omitted: undefined } },
+		{ operation: "removals", value: undefined },
+	])("default $operation leave cache and listeners unchanged on persistence failure", ({ value }) => {
 		const log = recordingLogger();
 		const storage = createStorage("sidebar-folders", log);
 		const original = { folders: ["Persisted"] };
 		storage.set("folders", original);
+		const previous = storage.get("folders", null);
 		const snapshots: unknown[] = [];
 		const unsubscribe = storage.subscribe("folders", () => snapshots.push(storage.get("folders", null)));
 		try {
 			withFailingPersistence(new Error("quota exceeded"), () => {
 				storage.set("folders", value);
-				expect(storage.get<unknown>("folders", null)).toEqual(expected);
-				expect(snapshots).toEqual([expected]);
-				expect(snapshots[0]).toBe(storage.get("folders", null));
+				expect(storage.get("folders", null)).toBe(previous);
+				expect(snapshots).toEqual([]);
 				expect(localStorage.getItem("bgb:sidebar-folders:folders")).toBe(JSON.stringify(original));
 				expect(createStorage("sidebar-folders", log).get<unknown>("folders", null)).toEqual(original);
 			});
 		} finally {
 			unsubscribe();
 		}
+	});
+
+	test("ephemeral writes update the cache without touching disk", () => {
+		const storage = createStorage("sidebar-folders", recordingLogger());
+		storage.set("folders", { folders: ["Persisted"] });
+		storage.set("folders", { folders: ["RAM"] }, { ephemeral: true });
+		expect(storage.get<unknown>("folders", null)).toEqual({ folders: ["RAM"] });
+		expect(localStorage.getItem("bgb:sidebar-folders:folders")).toBe(JSON.stringify({ folders: ["Persisted"] }));
 	});
 });

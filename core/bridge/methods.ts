@@ -44,7 +44,7 @@ export interface MethodDeps {
 	};
 	sidebar: {
 		renderers(): RendererConnection[];
-		requestSidebar(connectionId: number, command: SidebarCommand): Promise<SidebarResult>;
+		requestSidebar(connectionId: number, command: SidebarCommand, timeoutMs?: number, requestId?: string): Promise<SidebarResult>;
 	};
 	mcp: McpService;
 	checkUpdate(): Promise<UpdateStatus>;
@@ -217,8 +217,8 @@ export function createMethodHandlers(deps: MethodDeps): MethodHandlers {
 		},
 
 		"sidebar.execute": async (params, connection) => {
-			if (Object.keys(params).some((key) => key !== "command" && key !== "rendererConnectionId")) {
-				throw new BgbError("bad-request", "sidebar.execute accepts only command and rendererConnectionId");
+			if (Object.keys(params).some((key) => key !== "command" && key !== "rendererConnectionId" && key !== "requestId")) {
+				throw new BgbError("bad-request", "sidebar.execute accepts only command, rendererConnectionId and requestId");
 			}
 			const command = parseSidebarCommand(params.command);
 			const rendererConnectionId = params.rendererConnectionId;
@@ -226,6 +226,13 @@ export function createMethodHandlers(deps: MethodDeps): MethodHandlers {
 				typeof rendererConnectionId !== "number" || !Number.isSafeInteger(rendererConnectionId) || rendererConnectionId <= 0
 			)) {
 				throw new BgbError("bad-request", "rendererConnectionId must be a positive safe integer");
+			}
+			let requestId: string | undefined;
+			if (Object.hasOwn(params, "requestId")) {
+				if (typeof params.requestId !== "string" || params.requestId.length === 0) {
+					throw new BgbError("bad-request", "requestId must be a non-empty string");
+				}
+				requestId = params.requestId;
 			}
 			if (connection.buildKey !== "cli" && rendererConnectionId !== undefined && rendererConnectionId !== connection.id) {
 				throw new BgbError("permission-denied", "A renderer can address only its own sidebar connection");
@@ -241,7 +248,7 @@ export function createMethodHandlers(deps: MethodDeps): MethodHandlers {
 			}
 			const target = targetId === undefined ? candidates[0] : candidates.find((renderer) => renderer.id === targetId);
 			if (!target) throw new BgbError("unavailable", "The requested sidebar renderer is not connected or does not support sidebar-folders");
-			return deps.sidebar.requestSidebar(target.id, command);
+			return deps.sidebar.requestSidebar(target.id, command, undefined, requestId ?? crypto.randomUUID());
 		},
 
 		"mcp.list": async (params) => {

@@ -13,7 +13,7 @@ export interface PluginLogger {
 export interface PluginStorage {
 	get<T>(key: string, fallback: T): T;
 	/** Strict writes reject known persistence failures rather than keeping a session-only value. */
-	set(key: string, value: unknown, options?: { requirePersistence?: boolean }): void;
+	set(key: string, value: unknown, options?: { requirePersistence?: boolean; ephemeral?: boolean }): void;
 	/** Fires after `set` in this window and on `storage` events from other windows. */
 	subscribe(key: string, listener: () => void): () => void;
 }

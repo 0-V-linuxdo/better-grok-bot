@@ -35,7 +35,7 @@ export interface UpdateDeps {
 	arch: string;
 	run: CommandRunner;
 	binaries(): Promise<BinaryOps>;
-	spawnDetached(argv: readonly string[], env: Record<string, string>): void;
+	spawnDetached(argv: readonly string[], env: Record<string, string>): number | undefined;
 	/** Watchdog `/health` poll interval. */
 	pollMs: number;
 }
@@ -257,17 +257,23 @@ export async function applyUpdate(ctx: CoreContext, opts: ApplyUpdateOptions): P
 	ctx.log.info(`update: installed ${version} (was ${BGB_VERSION})`);
 	if (opts.restartAgent) {
 		const watchdog = path.join(ctx.paths.binPrevious, ctx.platform.binName());
-		deps.spawnDetached([watchdog, "update-watchdog", "--expect", version, "--timeout", "90"], { BGB_DATA_DIR: ctx.paths.root });
+		const watchdogPid = deps.spawnDetached([watchdog, "update-watchdog", "--expect", version, "--timeout", "90"], { BGB_DATA_DIR: ctx.paths.root });
+		await mutateState(ctx.paths, (state) => {
+			if (state.update.pending?.version === version) state.update.pending = { ...state.update.pending, watchdogPid };
+		});
 		await opts.restart?.();
 	}
 	return { state: "installed", current: BGB_VERSION, latest: version };
 }
 
 /**
- * `bgb update-watchdog` (run from `bin/previous/`): waits for an agent of `expect` on `/health`. When
- * none answers within `timeoutS`, stops whatever runs, restores `bin/previous/`, records the error,
- * starts the agent in `bin/` and notifies. A failed restore keeps `update.pending` (so `bgb doctor`
- * keeps reporting it) and records how to recover by hand. Exits 0 either way.
+ * `bgb update-watchdog` (run from `bin/previous/`): waits for an agent of `expect` on `/health`. The
+ * new agent clearing `update.pending` is the source of truth. This process only `restorePrevious` if
+ * `/health` never shows `expect`. When none answers within `timeoutS`, stops whatever runs, restores
+ * `bin/previous/`, records the error, starts the restored agent in `bin/` and notifies. A failed
+ * restore keeps `update.pending` (so `bgb doctor` keeps reporting it), starts `bin/previous` when
+ * that binary is still there (else starts nothing), and records how to recover by hand. Exits 0
+ * either way. Do not swap `bin/` from `bgb doctor`.
  */
 export async function runUpdateWatchdog(
 	ctx: CoreContext,
@@ -318,11 +324,18 @@ export async function runUpdateWatchdog(
 			state.update.error = `${opts.expect} failed to start and restoring ${previous} failed (${restoreError}); ${opts.expect} may still be installed in ${ctx.paths.bin}; ${recovery}`;
 		}
 	});
-	// Either way `bin/` holds the only installed agent (a failed restore rolls its moves back to the
-	// new binaries); it may just have been slow, and starting nothing would leave no agent at all.
-	await ctx.platform
-		.startAgent(path.join(ctx.paths.bin, ctx.platform.binName()), ctx.paths)
-		.catch((error) => ctx.log.error(`update-watchdog: start: ${errorMessage(error)}`));
+	// Restore success: `bin/` is previous. Restore fail: start `bin/previous` if it still has a
+	// binary (do not boot the failed new copy). No previous binary: start nothing; doctor still
+	// does not swap `bin/`.
+	const startBin =
+		restoreError === null
+			? path.join(ctx.paths.bin, ctx.platform.binName())
+			: existsSync(previousBin)
+				? previousBin
+				: null;
+	if (startBin !== null) {
+		await ctx.platform.startAgent(startBin, ctx.paths).catch((error) => ctx.log.error(`update-watchdog: start: ${errorMessage(error)}`));
+	}
 	await ctx.platform.notify(
 		"Better Grok Bot",
 		restoreError === null

@@ -9,14 +9,15 @@ const APP_CHUNK = /^assets\/index\.eager-app-[\w-]+\.js$/;
  * The app only shows sections when the connected computer answers `getHostSidebarSections` with a list; when it
  * answers null or rejects (Grok Bot has no Cursor computer) the native store used to stay unsupported. `sections-storage`
  * routes reads and writes through the runtime: host list wins, else a local copy, else `[]`, so folders always work.
- * A visible New folder icon sits in the sidebar header next to Search. Other patches: folder ordering, drop-at-pointer, wording,
- * bot-menu without the multiplayer flag, and the header bot count that `styles.css` shows.
+ * New folder is a Folders bar `+` above the bot list (not a header icon next to Search). Creating a folder focuses
+ * rename. Other patches: folder ordering, drop-at-pointer, wording, bot-menu without the multiplayer flag, and the
+ * header bot count that `styles.css` shows.
  */
 export default definePlugin({
 	id: "sidebar-folders",
 	name: "Sidebar Folders",
-	description: "Folders in the sidebar. A New folder icon sits in the header next to Search; then create, rename, delete, drag bots in and out.",
-	version: "0.2.3",
+	description: "Folders in the sidebar. New folder is a + on the Folders bar; create, rename, delete, drag bots in and out.",
+	version: "0.2.9",
 	apiVersion: 1,
 	runtime: "runtime.ts",
 	styles: "styles.css",
@@ -59,6 +60,12 @@ export default definePlugin({
 			file: APP_CHUNK,
 			find: /"8gtQoG":\["Section actions"\]/,
 			replace: '"8gtQoG":["Folder actions"]',
+		},
+		{
+			id: "label-empty",
+			file: APP_CHUNK,
+			find: /"\+\/x6DF":\["Drag Bots here"\]/,
+			replace: '"+/x6DF":["Drag bots here, or right\u2011click a bot"]',
 		},
 		{
 			// Bot context menu "New folder" was gated on grok_bot_multiplayer (teams). Personal Grok Bot has no such flag.

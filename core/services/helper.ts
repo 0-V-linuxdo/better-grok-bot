@@ -113,8 +113,12 @@ export interface HelperControllerOptions {
 	onChange(): void;
 	idleMs?: number;
 	maxFailures?: number;
+	/** After giving up, wait this long before a wanted helper may start again. */
+	givenUpMs?: number;
 	/** First restart delay; doubles per unexpected exit up to 30 s. */
 	restartBaseMs?: number;
+	/** Windows/Linux: kill a child that has not said hello after this long. */
+	helloMs?: number;
 }
 
 export class HelperController {
@@ -134,12 +138,20 @@ export class HelperController {
 	private restartTimer: Timer | null = null;
 	private idleTimer: Timer | null = null;
 	private killTimer: Timer | null = null;
+	private nextEnsure = false;
+	private givenUpAt: number | null = null;
+	private givenUpTimer: Timer | null = null;
+	private helloTimer: Timer | null = null;
+	private readonly givenUpMs: number;
+	private readonly helloMs: number;
 
 	constructor(opts: HelperControllerOptions) {
 		this.opts = opts;
 		this.idleMs = opts.idleMs ?? 30_000;
 		this.maxFailures = opts.maxFailures ?? 5;
 		this.restartBaseMs = opts.restartBaseMs ?? 1_000;
+		this.givenUpMs = opts.givenUpMs ?? 60_000;
+		this.helloMs = opts.helloMs ?? 10_000;
 	}
 
 	/** Why no helper can run here (nothing published for this OS/arch), or `null`. */
@@ -222,8 +234,7 @@ export class HelperController {
 			return;
 		}
 		await this.ensureBinary();
-		this.failureCount = 0;
-		this.failureReason = null;
+		this.resetFailures();
 		await this.ensureRunning();
 		this.armIdle();
 	}
@@ -313,17 +324,37 @@ export class HelperController {
 			if (!was && this.failureCount >= this.maxFailures) {
 				this.failureCount = 0;
 				this.failureReason = null;
+				this.givenUpAt = null;
 			}
 			void this.ensureRunning();
 		} else if (was) {
 			this.clearRestart();
+			this.clearGivenUpRetry();
 			this.armIdle();
 		}
 	}
 
-	/** Windows/Linux: starts the helper unless it runs, is starting, or failed {@link maxFailures} times in a row. */
+	/** Clears the start-limit circuit like systemd `reset-failed`. Does not start the helper. */
+	resetFailures(): void {
+		this.failureCount = 0;
+		this.failureReason = null;
+		this.givenUpAt = null;
+		this.clearGivenUpRetry();
+	}
+
+	/** Windows/Linux: starts the helper unless it runs, is starting, or is inside the given-up window. */
 	async ensureRunning(): Promise<void> {
-		if (this.stopped || this.child || this.launching || this.failureCount >= this.maxFailures) return;
+		if (this.stopped || this.child) return;
+		if (this.givenUpAt !== null && Date.now() - this.givenUpAt >= this.givenUpMs) {
+			this.failureCount = 0;
+			this.failureReason = null;
+			this.givenUpAt = null;
+		}
+		if (this.failureCount >= this.maxFailures) return;
+		if (this.launching) {
+			this.nextEnsure = true;
+			return;
+		}
 		this.clearRestart();
 		this.launching = true;
 		this.opts.onChange();
@@ -339,6 +370,7 @@ export class HelperController {
 			this.child = child;
 			this.saidHello = false;
 			this.opts.log.info(`helper started (pid ${child.pid})`);
+			this.armHelloDeadline(child);
 			void child.exited.then(
 				(code) => this.exited(child, code),
 				() => this.exited(child, -1),
@@ -348,6 +380,12 @@ export class HelperController {
 		} finally {
 			this.launching = false;
 			this.opts.onChange();
+			if (this.nextEnsure && this.wanted && !this.stopped && !this.child) {
+				this.nextEnsure = false;
+				void this.ensureRunning();
+			} else {
+				this.nextEnsure = false;
+			}
 		}
 	}
 
@@ -357,6 +395,9 @@ export class HelperController {
 		this.failureCount = 0;
 		this.failureReason = null;
 		this.restartAttempts = 0;
+		this.givenUpAt = null;
+		this.clearGivenUpRetry();
+		this.clearHelloDeadline();
 		this.opts.onChange();
 	}
 
@@ -375,6 +416,8 @@ export class HelperController {
 		this.stopped = true;
 		this.clearIdle();
 		this.clearRestart();
+		this.clearGivenUpRetry();
+		this.clearHelloDeadline();
 		this.clearKill();
 		const child = this.child;
 		if (!child) return;
@@ -402,6 +445,7 @@ export class HelperController {
 		if (this.child !== child) return;
 		this.child = null;
 		this.clearKill();
+		this.clearHelloDeadline();
 		const expected = this.quitting || this.stopped;
 		const hadHello = this.saidHello;
 		this.quitting = false;
@@ -421,6 +465,11 @@ export class HelperController {
 		this.failureCount++;
 		this.failureReason = reason;
 		this.opts.log.warn(`${reason} (${this.failureCount} in a row)`);
+		if (this.failureCount >= this.maxFailures) {
+			this.givenUpAt = Date.now();
+			this.armGivenUpRetry();
+			return;
+		}
 		this.scheduleRestart();
 	}
 
@@ -434,9 +483,26 @@ export class HelperController {
 		}, delay);
 	}
 
+	private armGivenUpRetry(): void {
+		this.clearGivenUpRetry();
+		if (!this.wanted || this.stopped || this.givenUpAt === null) return;
+		const delay = Math.max(0, this.givenUpMs - (Date.now() - this.givenUpAt));
+		this.givenUpTimer = setTimeout(() => {
+			this.givenUpTimer = null;
+			if (!this.wanted || this.stopped) return;
+			this.resetFailures();
+			void this.ensureRunning();
+		}, delay);
+	}
+
 	private clearRestart(): void {
 		clearTimeout(this.restartTimer ?? undefined);
 		this.restartTimer = null;
+	}
+
+	private clearGivenUpRetry(): void {
+		clearTimeout(this.givenUpTimer ?? undefined);
+		this.givenUpTimer = null;
 	}
 
 	private clearIdle(): void {
@@ -447,5 +513,21 @@ export class HelperController {
 	private clearKill(): void {
 		clearTimeout(this.killTimer ?? undefined);
 		this.killTimer = null;
+	}
+
+	private clearHelloDeadline(): void {
+		clearTimeout(this.helloTimer ?? undefined);
+		this.helloTimer = null;
+	}
+
+	private armHelloDeadline(child: HelperProcess): void {
+		this.clearHelloDeadline();
+		if (this.opts.platform === "darwin") return;
+		this.helloTimer = setTimeout(() => {
+			this.helloTimer = null;
+			if (this.child !== child || this.saidHello || this.stopped || !this.wanted) return;
+			this.opts.log.warn("helper did not say hello in time");
+			child.kill();
+		}, this.helloMs);
 	}
 }

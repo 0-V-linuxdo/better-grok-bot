@@ -395,7 +395,8 @@ test("Windows: a helper whose keyboard hook fails reports keys error, then recov
 	service.watchKeys(1, ["AltRight"]);
 	await waitFor(() => children.length === 1, 1_000, "spawn");
 	service.helperOpened(2);
-	service.helperMessage(2, hello("win32"));
+	service.helperMessage(2, hello("win32", "denied"));
+	expect(service.snapshot().keys).toEqual({ state: "error", detail: "the helper could not install its keyboard hook" });
 	recorder.helperFrames.length = 0;
 
 	service.helperMessage(2, { type: "access", keys: "denied" });

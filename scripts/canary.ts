@@ -37,6 +37,8 @@ export interface StateEntry {
 	checkedAt: string;
 	failures: Failure[];
 	reportedHash: string | null;
+	/** Outbox: `pending` after the state push, `done` after the GitHub issue side effect. */
+	report?: "pending" | "done";
 }
 
 interface CanaryState {
@@ -178,19 +180,65 @@ export function brokenKeys(entries: Readonly<Record<string, StateEntry>>, curren
 	});
 }
 
+/**
+ * GitHub issue side effect after the `canary-state` outbox row is pushed. Skip create/comment when
+ * a comment already contains `hash`, and do not reopen a closed issue unless `force`.
+ */
+export function issueAction(opts: {
+	brokenCount: number;
+	hash: string;
+	issueState: "open" | "closed" | null;
+	hashAlreadyPublished: boolean;
+	force?: boolean;
+}): "create" | "comment" | "close" | "none" {
+	if (opts.brokenCount === 0) return opts.issueState === "open" ? "close" : "none";
+	if (opts.issueState === "closed" && !opts.force) return "none";
+	if (opts.hashAlreadyPublished) return "none";
+	return opts.issueState === null ? "create" : "comment";
+}
+
+function reportDone(entry: StateEntry | undefined, hash: string): boolean {
+	return entry !== undefined && entry.reportedHash === hash && entry.report !== "pending";
+}
+
 async function gh(args: string[]): Promise<string> {
 	return (await run(["gh", ...args], { cwd: REPO_ROOT })).stdout;
 }
 
-async function findIssue(title: string): Promise<number | null> {
-	const listed: unknown = JSON.parse(await gh(["issue", "list", "--state", "open", "--label", ISSUE_LABEL, "--limit", "100", "--json", "number,title"]));
+async function findIssue(title: string): Promise<{ number: number; state: "open" | "closed" } | null> {
+	const listed: unknown = JSON.parse(
+		await gh(["issue", "list", "--state", "all", "--label", ISSUE_LABEL, "--limit", "100", "--json", "number,title,state"]),
+	);
 	if (!Array.isArray(listed)) return null;
 	for (const issue of listed as unknown[]) {
-		if (issue && typeof issue === "object" && "title" in issue && issue.title === title && "number" in issue && typeof issue.number === "number") {
-			return issue.number;
+		if (
+			issue &&
+			typeof issue === "object" &&
+			"title" in issue &&
+			issue.title === title &&
+			"number" in issue &&
+			typeof issue.number === "number" &&
+			"state" in issue &&
+			(issue.state === "OPEN" || issue.state === "CLOSED" || issue.state === "open" || issue.state === "closed")
+		) {
+			const state = String(issue.state).toLowerCase() === "closed" ? "closed" : "open";
+			return { number: issue.number, state };
 		}
 	}
 	return null;
+}
+
+async function issueCommentBodies(number: number): Promise<string[]> {
+	const raw: unknown = JSON.parse(await gh(["issue", "view", String(number), "--json", "body,comments"]));
+	if (!raw || typeof raw !== "object") return [];
+	const bodies: string[] = [];
+	if ("body" in raw && typeof raw.body === "string") bodies.push(raw.body);
+	if ("comments" in raw && Array.isArray(raw.comments)) {
+		for (const comment of raw.comments) {
+			if (comment && typeof comment === "object" && "body" in comment && typeof comment.body === "string") bodies.push(comment.body);
+		}
+	}
+	return bodies;
 }
 
 /** Commits `state` as `upstream.json` on `canary-state` on top of `parent` (orphan when null). */
@@ -250,6 +298,7 @@ async function report(args: string[]): Promise<void> {
 			checkedAt,
 			failures: outcome.failures,
 			reportedHash: base.entries[outcome.job.key]?.reportedHash ?? null,
+			report: base.entries[outcome.job.key]?.report,
 		};
 	}
 
@@ -262,43 +311,6 @@ async function report(args: string[]): Promise<void> {
 	if (versions.length > 0) {
 		await gh(["label", "create", ISSUE_LABEL, "--force", "--color", "d73a4a", "--description", "A Grok Bot release breaks Better Grok Bot"]);
 	}
-	const summaryLines: string[] = [];
-	for (const version of versions) {
-		const title = `Grok Bot ${version} breaks Better Grok Bot`;
-		const merged = { ...base.entries, ...updates };
-		const broken = brokenKeys(merged, selection.current, version);
-		const issue = await findIssue(title);
-		if (broken.length === 0) {
-			summaryLines.push(`- ${version}: pass`);
-			if (issue !== null) {
-				await gh(["issue", "close", String(issue), "--comment", `Every platform of Grok Bot ${version} passes as of ${runUrl}.`]);
-				console.error(`[report] closed #${issue}`);
-			}
-			continue;
-		}
-		const table = failureTable(broken.map((key) => ({ key, status: merged[key]?.status ?? "error", failures: merged[key]?.failures ?? [] })));
-		const hash = sha256Hex(table);
-		summaryLines.push(`- ${version}: ${broken.length} broken entr${broken.length === 1 ? "y" : "ies"}`);
-		const reported = broken.every((key) => merged[key]?.reportedHash === hash);
-		if (reported && issue !== null) continue;
-		const body = `The canary found Grok Bot ${version} incompatible with Better Grok Bot \`${selection.bgbCommit.slice(0, 7)}\`.\n\n${table}\n\nRun: ${runUrl}`;
-		if (issue === null) {
-			const created = await gh(["issue", "create", "--title", title, "--label", ISSUE_LABEL, "--body", body]);
-			console.error(`[report] opened ${created.trim()}`);
-		} else {
-			await gh(["issue", "comment", String(issue), "--body", body]);
-			console.error(`[report] commented on #${issue}`);
-		}
-		for (const key of broken) {
-			const update = updates[key];
-			if (update) update.reportedHash = hash;
-			else {
-				const existing = base.entries[key];
-				if (existing) updates[key] = { ...existing, reportedHash: hash };
-			}
-		}
-	}
-
 	const counts = outcomes.reduce<Record<EntryStatus, number>>(
 		(acc, outcome) => {
 			acc[outcome.status]++;
@@ -307,19 +319,77 @@ async function report(args: string[]): Promise<void> {
 		{ pass: 0, fail: 0, error: 0 },
 	);
 	const message = `chore(canary): ${counts.pass} pass, ${counts.fail} fail, ${counts.error} error (${versions.join(", ")})`;
-	for (let attempt = 1; ; attempt++) {
-		const state: CanaryState = { entries: { ...(fetched?.state.entries ?? {}), ...updates } };
-		const commit = await commitState(state, fetched?.head ?? null, message);
-		const pushed = await run(["git", "push", "origin", `${commit}:refs/heads/${STATE_BRANCH}`], { cwd: REPO_ROOT, allowFail: true });
-		if (pushed.exitCode === 0) {
-			console.error(`[report] ${message}`);
-			break;
+	const mark = (keys: string[], hash: string, report: "pending" | "done"): void => {
+		for (const key of keys) {
+			const update = updates[key];
+			if (update) {
+				update.reportedHash = hash;
+				update.report = report;
+			} else {
+				const existing = base.entries[key];
+				if (existing) updates[key] = { ...existing, reportedHash: hash, report };
+			}
 		}
-		if (attempt > 3) throw new ScriptError(`could not push ${STATE_BRANCH}:\n${pushed.stderr.trim()}`);
-		console.error(`[report] push rejected; refetching ${STATE_BRANCH} (retry ${attempt}/3)`);
-		await Bun.sleep(2_000 * attempt);
-		fetched = await fetchState();
+	};
+	const push = async (note: string): Promise<void> => {
+		for (let attempt = 1; ; attempt++) {
+			const state: CanaryState = { entries: { ...(fetched?.state.entries ?? {}), ...updates } };
+			const commit = await commitState(state, fetched?.head ?? null, note);
+			const pushed = await run(["git", "push", "origin", `${commit}:refs/heads/${STATE_BRANCH}`], { cwd: REPO_ROOT, allowFail: true });
+			if (pushed.exitCode === 0) {
+				console.error(`[report] ${note}`);
+				fetched = { head: commit, state };
+				return;
+			}
+			if (attempt > 3) throw new ScriptError(`could not push ${STATE_BRANCH}:\n${pushed.stderr.trim()}`);
+			console.error(`[report] push rejected; refetching ${STATE_BRANCH} (retry ${attempt}/3)`);
+			await Bun.sleep(2_000 * attempt);
+			fetched = await fetchState();
+		}
+	};
+
+	const summaryLines: string[] = [];
+	for (const version of versions) {
+		const title = `Grok Bot ${version} breaks Better Grok Bot`;
+		const merged = { ...base.entries, ...updates };
+		const broken = brokenKeys(merged, selection.current, version);
+		const issue = await findIssue(title);
+		if (broken.length === 0) {
+			summaryLines.push(`- ${version}: pass`);
+			if (issue?.state === "open") {
+				await gh(["issue", "close", String(issue.number), "--comment", `Every platform of Grok Bot ${version} passes as of ${runUrl}.`]);
+				console.error(`[report] closed #${issue.number}`);
+			}
+			continue;
+		}
+		const table = failureTable(broken.map((key) => ({ key, status: merged[key]?.status ?? "error", failures: merged[key]?.failures ?? [] })));
+		const hash = sha256Hex(table);
+		summaryLines.push(`- ${version}: ${broken.length} broken entr${broken.length === 1 ? "y" : "ies"}`);
+		const comments = issue !== null ? await issueCommentBodies(issue.number) : [];
+		const hashAlreadyPublished = comments.some((body) => body.includes(hash));
+		const action = issueAction({
+			brokenCount: broken.length,
+			hash,
+			issueState: issue?.state ?? null,
+			hashAlreadyPublished,
+		});
+		if (broken.every((key) => reportDone(merged[key], hash)) && action === "none") continue;
+		if (!broken.every((key) => reportDone(merged[key], hash))) {
+			mark(broken, hash, "pending");
+			await push(`${message} (pending ${version})`);
+		}
+		const body = `The canary found Grok Bot ${version} incompatible with Better Grok Bot \`${selection.bgbCommit.slice(0, 7)}\`.\n\n${table}\n\nRun: ${runUrl}\n\nReport-Hash: ${hash}`;
+		if (action === "create") {
+			const created = await gh(["issue", "create", "--title", title, "--label", ISSUE_LABEL, "--body", body]);
+			console.error(`[report] opened ${created.trim()}`);
+		} else if (action === "comment" && issue !== null) {
+			await gh(["issue", "comment", String(issue.number), "--body", body]);
+			console.error(`[report] commented on #${issue.number}`);
+		}
+		mark(broken, hash, "done");
 	}
+
+	await push(message);
 	await summary(`### Canary\n\n${summaryLines.join("\n")}`);
 }
 

@@ -6,12 +6,35 @@ All notable changes to Better Grok Bot are documented here.
 
 ### Fixed
 
-- Plugin cards follow Void++ `BaseCard`: 8px radius, 24px icon chip, 2-line description, author footer with a hairline, blue on-switch (Grok accent), 14px ghost star/pin/gear.
+- Sidebar Folders **0.2.9**: after a successful host list, a later host reject keeps the last local mirror (does not hide folder UI). `delete-folder` aborts a live rename overlay and disconnects the rename watcher (no blur-commit of a deleted id).
+- Sidebar Folders **0.2.8**: UI `+` creates through `persistEdit` (same owned write as agent `create-folder`). Esc on a never-renamed overlay deletes the untitled folder.
+- Helper: a Win/Linux child that never says hello is killed after 10s and counts as a failed start (Darwin launchd unchanged).
+- Sidebar replay LRU-32 never evicts an in-flight `requestId`.
+- Loader `keys.watch` / `media.duck` only mark sent after the RPC succeeds; a failed watch is retried on the next sync. Last unwatch of a held key delivers `false`.
+- Darwin with an agent LaunchAgent: `stop(true)` kickstarts; never `bgb agent --replace` while that plist exists.
+- Update watchdog: restore failure starts `bin/previous` if it still has a binary, else starts nothing (does not boot the failed new copy). Doctor still does not swap `bin/`.
+- Binary commits journal `DATA/bin/.journal.json` (fsync). Agent start rolls a leftover journal back or refuses until `setup --yes`.
+- Windows helper `hello.keys` is `denied` until `SetWindowsHookExW` returns a handle; `Access granted` follows install.
+- Canary: push `canary-state` with `report: pending` before `gh issue`; comments include `Report-Hash` so a failed push does not open a second issue. Closed issues stay closed.
+- Settings plugin cards overlay renderer `loading` (Starting…, toggle off) the same way they overlay `runtime-failed`.
+- `component()` does not cache `NullComponent` before `define()`; a later `define()` can recover without reload.
+- Bot Instructions editor is keyed by bot id; a save that settles after switching bots is ignored.
+- `sidebar.execute` accepts a caller `requestId` (MCP mutating tools forward it). Timeouts say list then retry with the same key; the host no longer mints a new UUID per RPC when the caller supplied one.
+- Push to Talk: each press has a generation; owed `response.create` only fires for the current generation; `responseInFlight` is set when sending create; the 3s timer still only logs and now gives up.
+- Helper given-up self-arms one `ensureRunning` after the interval while `wanted`. `bgb doctor --repair` resets the Win/Linux child circuit (`keys.install`); macOS stays launchd.
+- macOS helper: `setTap` flips `tapEnabled` before `CGEvent.tapEnable`, so own disable is not re-enabled as `tapDisabledByUserInput`.
+- MCP public `state` is derived from session flags (`connected` only when initialized and not closed). `tools()` throws unavailable if every enabled server failed to connect.
+- Plugin `storage.set()` does not update the cache or notify when `setItem` throws (optional `{ ephemeral: true }` is RAM-only). Star/pin only update UI after a successful write.
 - Plugins grid used `@container (max-width: 720px)` on the ~641px pane, so a 945px Grok Bot window was 1-col and no longer matched Userscript++. It now uses USPP's viewport `@media (max-width: 720px)` (2-col at the usual window; long names ellipsis).
 - Plugin Configure dialog showed **Authors: Unknown** for bundled plugins (cards already said Unravl) and an empty body for disabled extra-only plugins. Bundled authors are Unravl; disabled extra-only plugins say **Enable this plugin to configure it.**
 - Settings overlay died after the first visit: clicking **Better Grok Bot** passed `anchor: "bgb"` into pane-header's heading-link, which does `OL[anchor].label` and threw `Cannot read properties of undefined (reading 'label')`. The tab now reuses the native `general` heading-link key (`id` stays `bgb`). The sticky layout error boundary is also gone — only the BGB pane is bounded, and the native General pane stays mounted (hidden) while that tab is selected.
 - Settings → Better Grok Bot could not scroll: native `.sand-settings-panel__body` is `overflow: hidden` (General uses an inner ScrollArea). The card grid is not that scroller, so the BGB panel body now sets `overflow-y: auto`.
-- Sidebar Folders: **New folder** is a 36px `folder-plus` icon in the header (left of Search), not a labeled row (that overlapped the traffic lights). Leftover `aside > .bgb-sidebar-folders__new` is hidden. Collapsed rail injects into `__rail-actions`.
+- Sidebar Folders: **New folder** is a Folders bar `+` above the bot list (not a 36px header icon next to Search — that sat under the traffic lights). Creating a folder focuses inline rename. Empty folders say **Drag bots here, or right-click a bot** (native was only “Drag Bots here”). Dragging a bot onto a folder highlights the section. Collapsed rail still injects `folder-plus` into `__rail-actions`. Leftover `aside > .bgb-sidebar-folders__new` / header-actions clones are hidden. The bar uses the same `8px 8px 6px` inset as folder rows (FOLDERS was 4px further left than the chevrons); the `+` is 16px on the native count column, not a 20px square. Rename overlay uses the opaque editor fill (`--cursor-bg-editor`) and hides the header name — `--cursor-bg-primary` is 8% white, so “New folder” showed through the input. UI create/rename/drop share the `executeSidebar` queue and persist through `persistEdit`; re-entering rename aborts instead of committing on blur. Drag uses `setPointerCapture` and always stops on `lostpointercapture`.
+- Plugin `status()` is `loading` until `define()` runs (cards show Starting…, toggle disabled). Settings error boundaries fail per instance, not process-wide.
+- Sidebar `requestId` replays an identical intent instead of mutating twice; a timeout still means check the sidebar, never a blind retry with a new key.
+- Push to Talk: after cancel, `response.create` runs once on `response.done` / `response.cancelled`. The 3s timer only logs.
+- Helper: overlapping `ensureRunning` coalesces; given-up is a timed circuit breaker (wanted 0→1 or the clock resets it).
+- Setup undo that cannot finish records `setupResidual` and exits 1 (never a green summary). Update pending stores the watchdog pid; `bgb doctor` fails if that pid is gone and `/health` is not the new version — it does not swap `bin/`.
 - Sidebar Folders: dragging a multi-selected set of bots into a folder moves the whole set (native drop only moved the row under the pointer). Folder headers are valid drop targets.
 - Sidebar Folders: when the computer has no sections store (Grok Bot's `getHostSidebarSections` rejects), answer an empty list instead of throwing — throwing left the native cache at `null` and hid every folder UI. Bot context-menu New folder no longer requires the `grok_bot_multiplayer` flag.
 - macOS: re-export `VITE_DEV_SERVER_URL` at login from a `/bin/launchctl setenv` LaunchAgent (`io.github.unravl.bettergrokbot.hook`) instead of waiting for the compiled `bgb agent` binary. After reboot the variable is wiped, and the agent can take minutes to reach `reexportHook` — Grok Bot opened from the Dock in that window was vanilla. `bgb login` now setenv's itself too.

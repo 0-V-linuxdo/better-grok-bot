@@ -11,9 +11,11 @@ export interface State {
 	update: {
 		checkedAt: string | null;
 		latest: string | null;
-		pending: { version: string; previous: string; at: string } | null;
+		pending: { version: string; previous: string; at: string; watchdogPid?: number } | null;
 		error: string | null;
 	};
+	/** Undo steps that failed during a setup rollback; empty after a successful setup. */
+	setupResidual: string[];
 	/** appVersion → plugin ids already reported as failing for it. */
 	notified: Record<string, string[]>;
 	migratedGrokMods: boolean;
@@ -29,6 +31,7 @@ export function defaultState(): State {
 		lastBuild: null,
 		asarFingerprint: null,
 		update: { checkedAt: null, latest: null, pending: null, error: null },
+		setupResidual: [],
 		notified: {},
 		migratedGrokMods: false,
 		hook: null,

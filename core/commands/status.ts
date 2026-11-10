@@ -191,7 +191,7 @@ function printStatus(env: CommandEnv, ctx: CoreContext, details: StatusDetails):
 	if (report.plugins.length > 0) io.out("Plugins:");
 	for (const plugin of report.plugins) {
 		if (plugin.source === "core") continue;
-		const mark = plugin.state === "active" ? "✓" : plugin.state === "disabled" ? "-" : "✗";
+		const mark = plugin.state === "active" ? "✓" : plugin.state === "disabled" || plugin.state === "loading" ? "-" : "✗";
 		io.out(`  ${mark} ${plugin.id} (${plugin.source}) — ${plugin.state}${plugin.errors[0] ? `: ${plugin.errors[0]}` : ""}`);
 	}
 	if (report.themes.length > 0) io.out("Themes:");

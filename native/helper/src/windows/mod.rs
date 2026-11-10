@@ -28,7 +28,7 @@ impl WindowsBackend {
 impl Backend for WindowsBackend {
 	fn hello(&self) -> HelperMessage {
 		let (keys, codes) = match self.keys {
-			Some(_) => ("granted", keymap::codes(WINDOWS_KEYS)),
+			Some(_) => ("denied", keymap::codes(WINDOWS_KEYS)),
 			None => ("unsupported", Vec::new()),
 		};
 		HelperMessage::Hello {

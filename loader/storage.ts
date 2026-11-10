@@ -84,7 +84,7 @@ export function createStorage(pluginId: string, log: PluginLogger): PluginStorag
 			return entry.present ? (entry.value as T) : fallback;
 		},
 
-		set(key: string, value: unknown, options?: { requirePersistence?: boolean }): void {
+		set(key: string, value: unknown, options?: { requirePersistence?: boolean; ephemeral?: boolean }): void {
 			let raw: string | undefined;
 			try {
 				raw = JSON.stringify(value);
@@ -93,14 +93,20 @@ export function createStorage(pluginId: string, log: PluginLogger): PluginStorag
 				if (options?.requirePersistence === true) throw error;
 				return;
 			}
+			if (options?.ephemeral === true && options.requirePersistence !== true) {
+				cache.set(key, raw === undefined ? { present: false, value: undefined } : { present: true, value: JSON.parse(raw) });
+				notify(key);
+				return;
+			}
 			try {
 				const storage = getLocalStorage();
 				if (storage === undefined) throw new Error("localStorage is unavailable");
 				if (raw === undefined) storage.removeItem(prefix + key);
 				else storage.setItem(prefix + key, raw);
 			} catch (error) {
-				log.error(`cannot persist "${key}"; ${options?.requirePersistence === true ? "rejecting the write" : "keeping it for this session only"}: ${describeError(error)}`);
+				log.error(`cannot persist "${key}"; ${options?.requirePersistence === true ? "rejecting the write" : "leaving the previous value"}: ${describeError(error)}`);
 				if (options?.requirePersistence === true) throw error;
+				return;
 			}
 			// Cache the JSON round-trip, i.e. exactly what a reload would read back.
 			cache.set(key, raw === undefined ? { present: false, value: undefined } : { present: true, value: JSON.parse(raw) });

@@ -65,7 +65,7 @@ function printSummary(host: SetupHost, outcome: BuildOutcome, app: AppInstall, n
 	// Core hooks are listed only when they failed: without them the Settings section can't appear.
 	for (const plugin of outcome.manifest.plugins) {
 		if (plugin.source === "core" && plugin.state === "active") continue;
-		const mark = plugin.state === "active" ? "✓" : plugin.state === "disabled" ? "-" : "✗";
+		const mark = plugin.state === "active" ? "✓" : plugin.state === "disabled" || plugin.state === "loading" ? "-" : "✗";
 		const detail = plugin.errors[0] === undefined ? "" : `: ${plugin.errors[0]}`;
 		host.print(`  ${mark} ${plugin.name} (${plugin.id}) ${plugin.state}${detail}`);
 	}
@@ -227,18 +227,35 @@ export async function runSetup(ctx: CoreContext, opts: SetupOptions, overrides: 
 		}
 	} catch (error) {
 		if (staged !== null) await rm(staged, { recursive: true, force: true });
+		const residual: string[] = [];
 		for (const undo of undos.toReversed()) {
 			try {
 				await undo.run();
 			} catch (undoError) {
+				const detail = `${undo.what}: ${errorMessage(undoError)}`;
+				residual.push(detail);
 				host.printError(`bgb: could not ${undo.what}: ${errorMessage(undoError)}`);
 				ctx.log.error(`setup undo: could not ${undo.what}: ${errorMessage(undoError)}`);
 			}
 		}
-		ctx.log.error(`setup failed and was undone: ${errorMessage(error)}`);
+		if (residual.length > 0) {
+			await mutateState(paths, (state) => {
+				state.setupResidual = residual;
+			}).catch((writeError) => ctx.log.error(`setup undo: could not record residual: ${errorMessage(writeError)}`));
+			host.printError(`bgb: setup undo left residual:\n${residual.map((item) => `  - ${item}`).join("\n")}`);
+			ctx.log.error(`setup failed; undo left residual (${residual.join("; ")}): ${errorMessage(error)}`);
+		} else {
+			await mutateState(paths, (state) => {
+				state.setupResidual = [];
+			}).catch(() => {});
+			ctx.log.error(`setup failed and was undone: ${errorMessage(error)}`);
+		}
 		host.printError(`bgb: ${errorMessage(error)}`);
 		return 1;
 	}
+	await mutateState(paths, (state) => {
+		state.setupResidual = [];
+	});
 	ctx.log.info(`setup finished for Grok Bot ${app.version} (build ${outcome.key.slice(0, 12)})`);
 
 	try {

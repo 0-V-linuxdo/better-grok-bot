@@ -46,6 +46,13 @@ describe("define", () => {
 		expect(runtime.call("alpha", "hello")).toBe("alpha");
 	});
 
+	test("status() is loading until define() runs for an active runtime plugin", () => {
+		const { runtime, fromScript } = setup([pluginStatus({ id: "alpha" })]);
+		expect(runtime.status()[0]?.state).toBe("loading");
+		fromScript("alpha", () => runtime.define("alpha", () => ({ hello: () => "ok" })));
+		expect(runtime.status()[0]?.state).toBe("active");
+	});
+
 	test("binds to document.currentScript's data-bgb-plugin", () => {
 		const log = recordingLogger();
 		const { runtime } = createRuntime({
@@ -323,20 +330,20 @@ describe("executeSidebar", () => {
 });
 
 describe("component", () => {
-	test("the boundary renders null after a throw, for every instance", () => {
+	test("the boundary renders null after a throw, only for that instance", () => {
 		const React = createFakeReact();
 		const log = recordingLogger();
 		const jsx = (type: unknown, props: Record<string, unknown>) => React.createElement(type, props);
 		const Boundary = createBoundary(React, jsx, () => "inner", "BetterGrokBot(test.Comp)", log) as {
-			new (props: Record<string, unknown>): ReactComponentInstance & { render(): unknown; componentDidCatch(error: unknown): void };
+			new (props: Record<string, unknown>): ReactComponentInstance & { render(): unknown; componentDidCatch(error: unknown): void; state: unknown };
 			getDerivedStateFromError(): unknown;
 		};
 		const before = new Boundary({ a: 1 });
 		expect(before.render()).toMatchObject({ props: { a: 1 } });
-		Boundary.getDerivedStateFromError();
+		before.state = Boundary.getDerivedStateFromError();
 		before.componentDidCatch(new Error("render failed"));
 		expect(before.render()).toBeNull();
-		expect(new Boundary({}).render()).toBeNull();
+		expect(new Boundary({ b: 2 }).render()).toMatchObject({ props: { b: 2 } });
 		expect(log.lines.filter((line) => line.includes("crashed"))).toHaveLength(1);
 	});
 
@@ -349,6 +356,16 @@ describe("component", () => {
 		expect(component).not.toBe(NullComponent);
 		expect(runtime.component("alpha", "Widget")).toBe(component);
 		expect(runtime.component("alpha", "Missing")).toBe(NullComponent);
+	});
+
+	test("does not cache NullComponent before define() once React exists", () => {
+		const { runtime, fromScript, hooks } = setup([pluginStatus({ id: "alpha" })]);
+		hooks.provideReact(createFakeReact());
+		expect(runtime.component("alpha", "Widget")).toBe(NullComponent);
+		fromScript("alpha", () => runtime.define("alpha", () => ({ Widget: () => () => "widget" })));
+		const component = runtime.component("alpha", "Widget");
+		expect(component).not.toBe(NullComponent);
+		expect(runtime.component("alpha", "Widget")).toBe(component);
 	});
 });
 

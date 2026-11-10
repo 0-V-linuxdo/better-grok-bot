@@ -61,6 +61,8 @@ export interface SidebarRequestFrame {
 	type: "sidebar.req";
 	id: number;
 	command: SidebarCommand;
+	/** Caller intent id; the renderer replays the first result instead of mutating twice. */
+	requestId?: string;
 }
 
 export type SidebarResponseFrame =
@@ -146,7 +148,7 @@ export interface BridgeMethods {
 	"mcp.connect": { params: { pluginId: string; id: string }; result: McpServerStatus };
 	"mcp.tools": { params: { pluginId: string }; result: { tools: McpTool[] } };
 	"mcp.call": { params: { pluginId: string; serverId: string; name: string; arguments: Record<string, unknown> }; result: McpToolResult };
-	"sidebar.execute": { params: { command: SidebarCommand; rendererConnectionId?: number }; result: SidebarResult };
+	"sidebar.execute": { params: { command: SidebarCommand; rendererConnectionId?: number; requestId?: string }; result: SidebarResult };
 }
 
 export type BridgeMethod = keyof BridgeMethods;

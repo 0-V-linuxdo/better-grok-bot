@@ -38,7 +38,7 @@ export function createSidebarMcpServer(paths: DataPaths, options: SidebarMcpOpti
 		void pending?.then((client) => client.close(), () => {});
 	};
 	server.server.onclose = closeBridge;
-	const invoke = async (command: SidebarCommand, meta: Record<string, unknown> | undefined): Promise<CallToolResult> => {
+	const invoke = async (command: SidebarCommand, meta: Record<string, unknown> | undefined, requestId?: string): Promise<CallToolResult> => {
 		try {
 			const rendererConnectionId = meta?.[BGB_RENDERER_META_KEY];
 			if (rendererConnectionId !== undefined && (typeof rendererConnectionId !== "number" || !Number.isSafeInteger(rendererConnectionId) || rendererConnectionId <= 0)) {
@@ -58,6 +58,7 @@ export function createSidebarMcpServer(paths: DataPaths, options: SidebarMcpOpti
 			const result: unknown = await client.request("sidebar.execute", {
 				command,
 				...(typeof rendererConnectionId === "number" ? { rendererConnectionId } : {}),
+				...(requestId !== undefined ? { requestId } : {}),
 			});
 			if (!isSidebarResult(result) || result.operation !== command.operation) throw new SidebarError("internal", "Invalid sidebar bridge response");
 			return { content: [{ type: "text", text: acknowledgement(result) }], structuredContent: { ...result } };
@@ -72,6 +73,7 @@ export function createSidebarMcpServer(paths: DataPaths, options: SidebarMcpOpti
 		}
 	};
 	const selector = z.string().min(1).describe("Exact bot/folder ID preferred, otherwise unique exact case-insensitive name. Ambiguous names fail with candidates; no fuzzy matching.");
+	const requestId = z.string().min(1).optional().describe("Idempotency key; retries of the same mutation must reuse this value. Omit to mint a new intent.");
 	const readAnnotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 	const writeAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
 	server.registerTool("bgb_list_bots", {
@@ -84,17 +86,17 @@ export function createSidebarMcpServer(paths: DataPaths, options: SidebarMcpOpti
 	}, (_args, extra) => invoke({ operation: "list-folders" }, extra._meta));
 	server.registerTool("bgb_move_bot", {
 		description: "Move an existing bot into an existing folder, or null for Unassigned. Never deletes or renames a bot. Prefer IDs; ambiguous exact names fail with candidates.",
-		inputSchema: z.object({ bot: selector, folder: selector.nullable().describe("Destination folder ID or unique exact name; null moves to Unassigned.") }).strict(),
+		inputSchema: z.object({ bot: selector, folder: selector.nullable().describe("Destination folder ID or unique exact name; null moves to Unassigned."), requestId }).strict(),
 		annotations: { ...writeAnnotations, idempotentHint: true },
-	}, (args, extra) => invoke({ operation: "move-bot", ...args }, extra._meta));
+	}, (args, extra) => invoke({ operation: "move-bot", bot: args.bot, folder: args.folder }, extra._meta, args.requestId));
 	server.registerTool("bgb_create_folder", {
-		description: "Create a sidebar folder. Blank or duplicate normalized names fail; no bots are created or changed.",
-		inputSchema: z.object({ name: z.string().min(1) }).strict(), annotations: writeAnnotations,
-	}, (args, extra) => invoke({ operation: "create-folder", ...args }, extra._meta));
+		description: "Create a sidebar folder. Blank or duplicate normalized names fail; no bots are created or changed. On timeout, list folders then retry with the same requestId.",
+		inputSchema: z.object({ name: z.string().min(1), requestId }).strict(), annotations: writeAnnotations,
+	}, (args, extra) => invoke({ operation: "create-folder", name: args.name }, extra._meta, args.requestId));
 	server.registerTool("bgb_delete_folder", {
 		description: "Delete only the named sidebar folder container, preserving every bot. Bots outside all remaining folders become Unassigned. Default/Unassigned folders cannot be deleted. Prefer IDs; ambiguous exact names fail with candidates.",
-		inputSchema: z.object({ folder: selector }).strict(), annotations: { ...writeAnnotations, destructiveHint: true },
-	}, (args, extra) => invoke({ operation: "delete-folder", ...args }, extra._meta));
+		inputSchema: z.object({ folder: selector, requestId }).strict(), annotations: { ...writeAnnotations, destructiveHint: true },
+	}, (args, extra) => invoke({ operation: "delete-folder", folder: args.folder }, extra._meta, args.requestId));
 	return server;
 }
 

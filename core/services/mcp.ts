@@ -112,13 +112,21 @@ export class McpServers implements McpService {
 		return config;
 	}
 
+	private reportedState(session: Session | undefined): McpServerStatus["state"] {
+		if (!session) return "disconnected";
+		if (session.closed) return session.state === "error" ? "error" : "disconnected";
+		if (session.state === "error") return "error";
+		if (session.initialized) return "connected";
+		return "connecting";
+	}
+
 	private status(config: McpServerConfig): McpServerStatus {
 		const session = this.sessions.get(config.id);
 		return {
 			config: structuredClone(config),
-			state: session?.state ?? "disconnected",
+			state: this.reportedState(session),
 			...(session?.detail === undefined ? {} : { detail: session.detail }),
-			toolCount: session?.tools.size ?? 0,
+			toolCount: this.reportedState(session) === "connected" ? (session?.tools.size ?? 0) : 0,
 		};
 	}
 
@@ -310,14 +318,23 @@ export class McpServers implements McpService {
 		await this.load();
 		const enabled = [...this.configs.values()].filter((config) => config.enabled);
 		await Promise.all(enabled.map((config) => this.connect(config.id).catch(() => undefined)));
-		// Read the current configs again: a save/remove may have invalidated a connection during discovery.
 		const tools: McpTool[] = [];
+		let failed = 0;
+		let connected = 0;
 		for (const config of this.configs.values()) {
 			if (!config.enabled) continue;
 			const session = this.sessions.get(config.id);
-			if (session?.state === "connected" && !session.closed) {
+			const state = this.reportedState(session);
+			if (state === "connected" && session) {
+				connected++;
 				for (const tool of session.tools.values()) tools.push(structuredClone(tool));
+			} else if (state === "error") {
+				failed++;
 			}
+		}
+		if (enabled.length > 0 && connected === 0 && failed > 0) {
+			const detail = [...this.sessions.values()].find((session) => this.reportedState(session) === "error")?.detail;
+			throw new BgbError("unavailable", detail ?? "MCP servers failed to connect");
 		}
 		return tools;
 	}
@@ -328,7 +345,7 @@ export class McpServers implements McpService {
 		const config = this.config(serverId);
 		if (!config.enabled) throw new BgbError("permission-denied", "MCP server is disabled");
 		const session = this.sessions.get(serverId);
-		if (!session || session.state !== "connected" || session.closed) {
+		if (!session || this.reportedState(session) !== "connected" || session.closed) {
 			throw new BgbError("unavailable", "MCP server is not connected; refresh tools first");
 		}
 		if (!session.tools.has(name)) throw new BgbError("not-found", "MCP tool was not discovered on this server");

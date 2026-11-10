@@ -5,7 +5,8 @@
 //! message loop, so held modifiers sampled right after the hook is installed are ordered against key
 //! events, and a release during activation is reported after the sampled down instead of being lost.
 //! A hook that fails to install is reported as `access: denied` and retried with backoff while keys
-//! are wanted; `access: granted` follows once it installs.
+//! are wanted; `hello.keys` is `denied` until `SetWindowsHookExW` returns a handle, then
+//! `access: granted` follows.
 
 use crate::keymap::{self, WINDOWS_KEYS};
 use crate::protocol::HelperMessage;
@@ -172,9 +173,8 @@ impl HookThread {
 				self.hook = Some(installed);
 				self.retry_delay = INSTALL_RETRY_MIN;
 				self.log.info("keyboard hook installed");
-				if std::mem::take(&mut self.denied) {
-					let _ = self.outbox.send(HelperMessage::Access { keys: "granted" });
-				}
+				self.denied = false;
+				let _ = self.outbox.send(HelperMessage::Access { keys: "granted" });
 			}
 			Err(error) => {
 				let delay = self.retry_delay;

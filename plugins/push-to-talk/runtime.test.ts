@@ -219,6 +219,93 @@ describe("background holds", () => {
 		expect(session.sent.map((frame) => frame.type)).toEqual(["input_audio_buffer.clear"]);
 		expect(session.received).toEqual(["input_audio_buffer.speech_started", "input_audio_buffer.speech_stopped"]);
 	});
+
+	test("owed response.create waits for response.done; the 3s timer does not send a second create", () => {
+		const { keys, plugin, session, startCall } = setup("win32");
+		startCall();
+		keys.key("AltRight", true);
+		plugin.holdsFrame(new Float32Array(480));
+		now = HOLD_MS;
+		keys.key("AltRight", false);
+		now += TAIL_MS;
+		plugin.holdsFrame(new Float32Array(480));
+		expect(session.sent.filter((frame) => frame.type === "response.create")).toHaveLength(1);
+		session.emit("message", { type: "response.created" });
+		const owed: Array<() => void> = [];
+		const realSetTimeout = window.setTimeout.bind(window);
+		const spy = spyOn(window, "setTimeout").mockImplementation(((handler: TimerHandler, ms?: number, ...args: unknown[]) => {
+			if (ms === 3000 && typeof handler === "function") {
+				owed.push(() => {
+					(handler as () => void)();
+				});
+				return 1 as unknown as ReturnType<typeof setTimeout>;
+			}
+			return realSetTimeout(handler, ms, ...args);
+		}) as typeof setTimeout);
+		now += HOLD_MS;
+		keys.key("AltRight", true);
+		plugin.holdsFrame(new Float32Array(480));
+		now += HOLD_MS;
+		keys.key("AltRight", false);
+		now += TAIL_MS;
+		plugin.holdsFrame(new Float32Array(480));
+		expect(session.sent.filter((frame) => frame.type === "response.create")).toHaveLength(1);
+		expect(session.sent.some((frame) => frame.type === "response.cancel")).toBe(true);
+		for (const fire of owed) fire();
+		expect(session.sent.filter((frame) => frame.type === "response.create")).toHaveLength(1);
+		session.emit("message", { type: "response.done" });
+		expect(session.sent.filter((frame) => frame.type === "response.create")).toHaveLength(1);
+		spy.mockRestore();
+	});
+
+	test("two commits before response.created send one create until done", () => {
+		const { keys, plugin, session, startCall } = setup("win32");
+		startCall();
+		keys.key("AltRight", true);
+		plugin.holdsFrame(new Float32Array(480));
+		now = HOLD_MS;
+		keys.key("AltRight", false);
+		now += TAIL_MS;
+		plugin.holdsFrame(new Float32Array(480));
+		expect(session.sent.filter((frame) => frame.type === "response.create")).toHaveLength(1);
+		now += HOLD_MS;
+		keys.key("AltRight", true);
+		plugin.holdsFrame(new Float32Array(480));
+		now += HOLD_MS;
+		keys.key("AltRight", false);
+		now += TAIL_MS;
+		plugin.holdsFrame(new Float32Array(480));
+		expect(session.sent.filter((frame) => frame.type === "response.create")).toHaveLength(1);
+		session.emit("message", { type: "response.created" });
+		expect(session.sent.filter((frame) => frame.type === "response.create")).toHaveLength(1);
+		session.emit("message", { type: "response.done" });
+		expect(session.sent.filter((frame) => frame.type === "response.create")).toHaveLength(2);
+	});
+
+	test("barge-in after owed drops the abandoned generation", () => {
+		const { keys, plugin, session, startCall } = setup("win32");
+		startCall();
+		keys.key("AltRight", true);
+		plugin.holdsFrame(new Float32Array(480));
+		now = HOLD_MS;
+		keys.key("AltRight", false);
+		now += TAIL_MS;
+		plugin.holdsFrame(new Float32Array(480));
+		session.emit("message", { type: "response.created" });
+		now += HOLD_MS;
+		keys.key("AltRight", true);
+		plugin.holdsFrame(new Float32Array(480));
+		now += HOLD_MS;
+		keys.key("AltRight", false);
+		now += TAIL_MS;
+		plugin.holdsFrame(new Float32Array(480));
+		expect(session.sent.filter((frame) => frame.type === "response.create")).toHaveLength(1);
+		now += HOLD_MS;
+		keys.key("AltRight", true);
+		expect(session.sent.filter((frame) => frame.type === "response.create")).toHaveLength(1);
+		session.emit("message", { type: "response.done" });
+		expect(session.sent.filter((frame) => frame.type === "response.create")).toHaveLength(1);
+	});
 });
 
 describe("music ducking", () => {

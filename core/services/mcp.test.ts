@@ -65,7 +65,7 @@ beforeEach(async () => {
 afterEach(async () => {
 	for (const service of services.splice(0)) await service.shutdown();
 	for (const server of sdkServers.splice(0)) await server.close();
-	for (const server of peers.splice(0)) await server.stop();
+	for (const server of peers.splice(0)) await Promise.race([server.stop(), Bun.sleep(1_000)]);
 	await ctx.cleanup();
 });
 
@@ -493,6 +493,14 @@ for (const method of ["initialize", "tools/list"] as const) {
 		expect(wire.calls()).toEqual([]);
 	});
 }
+
+test("tools throws unavailable when every enabled server fails to connect", async () => {
+	const unhealthy = peer({ failList: true });
+	const service = create();
+	await service.save(config(unhealthy, "unhealthy"));
+	await expect(service.tools()).rejects.toMatchObject({ code: "unavailable" });
+	expect((await service.list())[0]).toMatchObject({ state: "error", toolCount: 0 });
+});
 
 test("call deadline rejects a hung tool rather than returning a fabricated result", async () => {
 	const wire = peer({ hang: "tools/call" });

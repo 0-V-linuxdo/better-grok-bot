@@ -10,7 +10,7 @@ import { type CommandEnv, liveRendererKeys } from "./env.ts";
 function printPlugins(env: CommandEnv, plugins: readonly PluginStatus[], warnings: readonly string[]): void {
 	for (const plugin of plugins) {
 		if (plugin.source === "core" && plugin.state === "active") continue;
-		const mark = plugin.state === "active" ? "✓" : plugin.state === "disabled" || plugin.state === "unsupported-platform" ? "-" : "✗";
+		const mark = plugin.state === "active" ? "✓" : plugin.state === "disabled" || plugin.state === "unsupported-platform" || plugin.state === "loading" ? "-" : "✗";
 		env.io.out(`  ${mark} ${plugin.id} ${plugin.version} (${plugin.source}) — ${plugin.state}`);
 		if (plugin.state === "disabled") continue;
 		for (const error of plugin.errors) env.io.err(`      ${error.replaceAll("\n", "\n      ")}`);

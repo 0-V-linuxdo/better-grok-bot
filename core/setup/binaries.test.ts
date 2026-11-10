@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, mkdtemp, readdir, rm, stat } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import type { Platform } from "../../sdk/index.ts";
 import { type CoreContext, createContext } from "../context.ts";
 import { nullLogger } from "../log.ts";
-import { type BinariesIo, commitBinaries, restorePrevious, stageBinaries, systemBinariesIo } from "./binaries.ts";
+import { type BinariesIo, binaryJournalPath, commitBinaries, recoverBinaryJournal, restorePrevious, stageBinaries, systemBinariesIo } from "./binaries.ts";
 import { recordingAdapter } from "./test-fakes.ts";
 
 const isWindows = process.platform === "win32";
@@ -162,6 +162,32 @@ test("restorePrevious puts the replaced binaries back", async () => {
 	expect((await stat(path.join(ctx.paths.bin, MAIN))).ino).toBe(oldIno);
 	expect(existsSync(ctx.paths.binPrevious)).toBe(false);
 	expect(await installedVersion()).toBe(Bun.version);
+});
+
+test("a clean commit leaves no binary journal", async () => {
+	await installOld();
+	expect(existsSync(binaryJournalPath(ctx.paths.bin))).toBe(false);
+	await commitBinaries(ctx, await stageBinaries(ctx, await fakeRelease("new"), Bun.version));
+	expect(existsSync(binaryJournalPath(ctx.paths.bin))).toBe(false);
+});
+
+test("recoverBinaryJournal rolls a leftover move back and deletes the journal", async () => {
+	await installOld();
+	const main = path.join(ctx.paths.bin, MAIN);
+	const aside = path.join(ctx.paths.bin, `${MAIN}.aside`);
+	const ino = (await stat(main)).ino;
+	await systemBinariesIo.rename(main, aside);
+	await writeFile(binaryJournalPath(ctx.paths.bin), `${JSON.stringify({ moves: [{ from: main, to: aside }] })}\n`);
+	await recoverBinaryJournal(ctx);
+	expect((await stat(main)).ino).toBe(ino);
+	expect(existsSync(aside)).toBe(false);
+	expect(existsSync(binaryJournalPath(ctx.paths.bin))).toBe(false);
+});
+
+test("a malformed binary journal refuses to start until setup --yes", async () => {
+	await mkdir(ctx.paths.bin, { recursive: true });
+	await writeFile(binaryJournalPath(ctx.paths.bin), "not-json\n");
+	await expect(recoverBinaryJournal(ctx)).rejects.toThrow(/unfinished binary install.*setup --yes/);
 });
 
 for (let failAt = 1; failAt <= NAMES.length * 2; failAt++) {

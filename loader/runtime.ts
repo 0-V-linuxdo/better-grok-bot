@@ -259,6 +259,12 @@ export function createRuntime(options: RuntimeOptions): LoaderRuntime {
 					return NullComponent;
 				}
 				const full: Partial<UiDeps> = { ...deps, React, jsx: deps.jsx ?? jsxFromReact(React) };
+				// Not yet define()'d: same as missing React — do not cache NullComponent.
+				if (!defined.has(id)) {
+					if (isUiDeps(full)) return resolveComponent(id, name, full);
+					log.error(`BetterGrokBot(${id}.${name}): deps must provide React.Component and jsx; rendering nothing`);
+					return NullComponent;
+				}
 				let component: unknown = NullComponent;
 				if (isUiDeps(full)) component = resolveComponent(id, name, full);
 				else log.error(`BetterGrokBot(${id}.${name}): deps must provide React.Component and jsx; rendering nothing`);
@@ -266,7 +272,7 @@ export function createRuntime(options: RuntimeOptions): LoaderRuntime {
 				return component;
 			} catch (error) {
 				log.error(`BetterGrokBot(${id}.${name}): could not be built; rendering nothing:`, error);
-				components.set(componentKey, NullComponent);
+				if (defined.has(id)) components.set(componentKey, NullComponent);
 				return NullComponent;
 			}
 		},
@@ -274,9 +280,14 @@ export function createRuntime(options: RuntimeOptions): LoaderRuntime {
 		status(): PluginStatus[] {
 			return manifest.plugins.map((plugin) => {
 				const runtimeError = manifestPlugins.get(plugin.id) === plugin ? runtimeFailures.get(plugin.id) : undefined;
+				const awaitingDefine =
+					runtimeError === undefined &&
+					plugin.state === "active" &&
+					plugin.hasRuntime &&
+					!defined.has(plugin.id);
 				return {
 					...plugin,
-					state: runtimeError === undefined ? plugin.state : "runtime-failed",
+					state: runtimeError !== undefined ? "runtime-failed" : awaitingDefine ? "loading" : plugin.state,
 					errors: runtimeError === undefined ? [...plugin.errors] : [...plugin.errors, runtimeError],
 					patches: plugin.patches.map((patch) => ({ ...patch, files: [...patch.files] })),
 					permissions: [...plugin.permissions],

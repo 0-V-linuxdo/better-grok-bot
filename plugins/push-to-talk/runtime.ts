@@ -73,8 +73,14 @@ interface Call {
 	serverTurns: ServerTurns;
 	responseInFlight: boolean;
 	turn: Turn | null;
-	/** A `response.create` waiting for the interrupted reply to finish cancelling (`window.setTimeout` handle). */
-	owedResponse: number | null;
+	/** True when a `response.create` is waiting for `response.done` after cancel. */
+	owed: boolean;
+	/** Press generation that owns `owed`; a later barge-in abandons it. */
+	owedGeneration: number;
+	/** Increments on every press that starts a turn. */
+	generation: number;
+	/** Warn-only timer; never sends a second `response.create`. */
+	owedWarn: number | null;
 }
 
 interface Snapshot {
@@ -406,27 +412,39 @@ export function createPushToTalk(ctx: PluginContext) {
 	};
 
 	const settleOwedResponse = (target: Call, sendIt: boolean): void => {
-		if (target.owedResponse === null) return;
-		clearTimeout(target.owedResponse);
-		target.owedResponse = null;
-		if (sendIt) send(target, { type: "response.create" });
+		if (target.owedWarn !== null) {
+			clearTimeout(target.owedWarn);
+			target.owedWarn = null;
+		}
+		if (!target.owed) return;
+		target.owed = false;
+		if (sendIt) {
+			target.responseInFlight = true;
+			send(target, { type: "response.create" });
+		}
 	};
 
 	const requestResponse = (target: Call): void => {
 		if (!target.responseInFlight) {
+			target.responseInFlight = true;
 			send(target, { type: "response.create" });
 			return;
 		}
-		// The interrupted reply is still cancelling; the server rejects a second response meanwhile.
+		// The interrupted reply is still cancelling; wait for response.done, do not timer-create.
 		settleOwedResponse(target, false);
-		target.owedResponse = window.setTimeout(() => {
-			target.owedResponse = null;
-			send(target, { type: "response.create" });
+		target.owed = true;
+		target.owedGeneration = target.generation;
+		target.owedWarn = window.setTimeout(() => {
+			target.owedWarn = null;
+			if (target.owed && target.owedGeneration === target.generation) {
+				target.owed = false;
+				ctx.log.warn("owed response.create still waiting for response.done; not sending a second create");
+			}
 		}, OWED_RESPONSE_TIMEOUT_MS);
 	};
 
 	const startTurn = (target: Call): void => {
-		// This turn's reply also answers an earlier commit still waiting for its response.
+		target.generation++;
 		settleOwedResponse(target, false);
 		if (target.responseInFlight) send(target, { type: "response.cancel" });
 		target.turn = { startedAt: performance.now(), samples: 0, releasedAt: null, heldMs: 0, tail: null, shortcut: false };
@@ -601,21 +619,20 @@ export function createPushToTalk(ctx: PluginContext) {
 				return;
 			case "response.created":
 				target.responseInFlight = true;
-				// Someone else's reply now covers the committed turn.
-				settleOwedResponse(target, false);
-				// The caller holds the floor; server VAD would never start a reply over them.
+				// Do not drop owed: this created is the in-flight response, not a later deferred create.
 				if (target.turn !== null) send(target, { type: "response.cancel" });
 				expectReply();
 				return;
 			case "response.done":
 				target.responseInFlight = false;
-				settleOwedResponse(target, true);
+				if (target.owed && target.owedGeneration === target.generation) settleOwedResponse(target, true);
+				else settleOwedResponse(target, false);
 				settleReply();
 				return;
 			case "response.cancelled":
 				target.responseInFlight = false;
-				settleOwedResponse(target, true);
-				// An interruption: the music comes back now, without the hang time.
+				if (target.owed && target.owedGeneration === target.generation) settleOwedResponse(target, true);
+				else settleOwedResponse(target, false);
 				settleReply();
 				playback.reset();
 				return;
@@ -638,7 +655,10 @@ export function createPushToTalk(ctx: PluginContext) {
 			serverTurns: "pending",
 			responseInFlight: false,
 			turn: null,
-			owedResponse: null,
+			owed: false,
+			owedGeneration: 0,
+			generation: 0,
+			owedWarn: null,
 		};
 		call = target;
 		candidate.socket.addEventListener("message", (event) => onServerMessage(target, event));

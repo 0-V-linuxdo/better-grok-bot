@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { chmod, copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, open, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import type { CoreContext } from "../context.ts";
 import { errorMessage } from "../errors.ts";
@@ -18,6 +18,67 @@ export const systemBinariesIo: BinariesIo = { rename: renameReplacing, exec: exe
 
 /** Written into a staging dir by {@link stageBinaries}: the version `commitBinaries` must find installed. */
 const STAGED_VERSION_FILE = ".version";
+
+/** On-disk rename journal for {@link moveTransaction}; recovered at agent start. */
+export const BINARY_JOURNAL = ".journal.json";
+
+export function binaryJournalPath(binDir: string): string {
+	return path.join(binDir, BINARY_JOURNAL);
+}
+
+type JournalMove = { from: string; to: string };
+
+async function persistJournal(file: string, moves: readonly JournalMove[]): Promise<void> {
+	const temp = `${file}.tmp-${randomBytes(6).toString("hex")}`;
+	const handle = await open(temp, "w");
+	try {
+		await handle.writeFile(`${JSON.stringify({ moves })}\n`);
+		await handle.sync();
+	} finally {
+		await handle.close();
+	}
+	await renameReplacing(temp, file);
+}
+
+/**
+ * If `DATA/bin/.journal.json` exists, rolls its moves back (newest first) and deletes it. Throws when
+ * the journal is malformed or a move cannot be undone — run `bgb setup --yes`. Does not swap `bin/`.
+ */
+export async function recoverBinaryJournal(ctx: CoreContext, io: BinariesIo = systemBinariesIo): Promise<void> {
+	const file = binaryJournalPath(ctx.paths.bin);
+	let text: string;
+	try {
+		text = await readFile(file, "utf8");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+		throw error;
+	}
+	let moves: JournalMove[];
+	try {
+		const parsed: unknown = JSON.parse(text);
+		if (!parsed || typeof parsed !== "object" || !("moves" in parsed) || !Array.isArray((parsed as { moves: unknown }).moves)) {
+			throw new Error("malformed");
+		}
+		moves = (parsed as { moves: JournalMove[] }).moves.filter(
+			(move) => move && typeof move.from === "string" && typeof move.to === "string",
+		);
+	} catch {
+		throw new Error(`unfinished binary install (${file} is not a valid journal); run: bgb setup --yes`);
+	}
+	const stuck: string[] = [];
+	for (const { from, to } of moves.toReversed()) {
+		if (!existsSync(to)) continue;
+		try {
+			await io.rename(to, from);
+		} catch (error) {
+			stuck.push(`${to} → ${from}: ${errorMessage(error)}`);
+		}
+	}
+	if (stuck.length > 0) {
+		throw new Error(`unfinished binary install could not be rolled back (${stuck.join("; ")}); run: bgb setup --yes`);
+	}
+	await rm(file, { force: true });
+}
 
 /** A failed transaction whose rollback could not move everything back. */
 class RollbackFailedError extends Error {}
@@ -42,26 +103,41 @@ async function readVersion(io: BinariesIo, bin: string): Promise<string> {
 }
 
 /**
- * Runs `fn` with a `move` that journals each rename. If `fn` throws, moves everything back (newest first)
- * and rethrows; a rollback that leaves files behind throws {@link RollbackFailedError} naming them.
+ * Runs `fn` with a `move` that journals each rename to `DATA/bin/.journal.json`. If `fn` throws, moves
+ * everything back (newest first) and rethrows; a rollback that leaves files behind throws
+ * {@link RollbackFailedError} naming them and keeps the journal for {@link recoverBinaryJournal}.
  */
-async function moveTransaction(io: BinariesIo, fn: (move: (from: string, to: string) => Promise<void>) => Promise<void>): Promise<void> {
-	const moves: { from: string; to: string }[] = [];
+async function moveTransaction(
+	binDir: string,
+	io: BinariesIo,
+	fn: (move: (from: string, to: string) => Promise<void>) => Promise<void>,
+): Promise<void> {
+	const journal = binaryJournalPath(binDir);
+	const moves: JournalMove[] = [];
+	await persistJournal(journal, []);
 	try {
 		await fn(async (from, to) => {
 			await io.rename(from, to);
 			moves.push({ from, to });
+			await persistJournal(journal, moves);
 		});
+		await rm(journal, { force: true });
 	} catch (error) {
+		const remaining: JournalMove[] = [];
 		const stuck: string[] = [];
-		for (const { from, to } of moves.toReversed()) {
+		for (const move of moves.toReversed()) {
 			try {
-				await io.rename(to, from);
+				await io.rename(move.to, move.from);
 			} catch (moveError) {
-				stuck.push(`${to} → ${from}: ${errorMessage(moveError)}`);
+				remaining.unshift(move);
+				stuck.push(`${move.to} → ${move.from}: ${errorMessage(moveError)}`);
 			}
 		}
-		if (stuck.length > 0) throw new RollbackFailedError(`${errorMessage(error)}; could not move back ${stuck.join("; ")}`);
+		if (stuck.length > 0) {
+			await persistJournal(journal, remaining).catch(() => undefined);
+			throw new RollbackFailedError(`${errorMessage(error)}; could not move back ${stuck.join("; ")}`);
+		}
+		await rm(journal, { force: true }).catch(() => undefined);
 		throw error;
 	}
 }
@@ -148,7 +224,7 @@ export async function commitBinaries(ctx: CoreContext, stagedDir: string, io: Bi
 		await discardPrevious(ctx, io);
 		await mkdir(binPrevious, { recursive: true });
 		try {
-			await moveTransaction(io, async (move) => {
+			await moveTransaction(bin, io, async (move) => {
 				for (const name of names) {
 					if (existsSync(path.join(bin, name))) await move(path.join(bin, name), path.join(binPrevious, name));
 				}
@@ -180,7 +256,7 @@ async function replaceInstalled(ctx: CoreContext, fromDir: string | null, io: Bi
 	const names = binaryNames(ctx);
 	const trash = path.join(bin, `.trash-${uniqueSuffix()}`);
 	await mkdir(trash, { recursive: true });
-	await moveTransaction(io, async (move) => {
+	await moveTransaction(bin, io, async (move) => {
 		for (const name of names) {
 			if (existsSync(path.join(bin, name))) await move(path.join(bin, name), path.join(trash, name));
 		}

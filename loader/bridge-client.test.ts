@@ -207,6 +207,56 @@ describe("addressed sidebar commands", () => {
 		client.stop();
 	});
 
+	test("a repeated requestId replays the first result without a second mutation", async () => {
+		const { client, last } = setup();
+		let calls = 0;
+		client.onSidebarRequest(async (command) => {
+			calls++;
+			if (command.operation !== "create-folder") throw new Error(command.operation);
+			return { operation: "create-folder", folder: { id: "once", name: command.name ?? "Once", botIds: [] } };
+		});
+		client.start();
+		const socket = last();
+		socket.accept();
+		socket.welcome();
+		socket.receive({ type: "sidebar.req", id: 1, command: { operation: "create-folder", name: "Once" }, requestId: "intent-1" });
+		await settle(() => socket.sent.some((frame) => frame.type === "sidebar.res" && frame.id === 1));
+		socket.receive({ type: "sidebar.req", id: 2, command: { operation: "create-folder", name: "Once" }, requestId: "intent-1" });
+		await settle(() => socket.sent.some((frame) => frame.type === "sidebar.res" && frame.id === 2));
+		expect(calls).toBe(1);
+		expect(socket.sent.filter((frame) => frame.type === "sidebar.res").slice(-2)).toEqual([
+			{ type: "sidebar.res", id: 1, ok: true, result: { operation: "create-folder", folder: { id: "once", name: "Once", botIds: [] } } },
+			{ type: "sidebar.res", id: 2, ok: true, result: { operation: "create-folder", folder: { id: "once", name: "Once", botIds: [] } } },
+		]);
+		client.stop();
+	});
+
+	test("an in-flight requestId is not evicted by later keys", async () => {
+		const { client, last } = setup();
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let calls = 0;
+		client.onSidebarRequest(async () => {
+			calls++;
+			await gate;
+			return { operation: "list-folders", folders: [] };
+		});
+		client.start();
+		const socket = last();
+		socket.accept();
+		socket.welcome();
+		for (let id = 1; id <= 33; id++) {
+			socket.receive({ type: "sidebar.req", id, command: { operation: "list-folders" }, requestId: `k-${id}` });
+		}
+		socket.receive({ type: "sidebar.req", id: 34, command: { operation: "list-folders" }, requestId: "k-1" });
+		release();
+		await settle(() => socket.sent.some((frame) => frame.type === "sidebar.res" && frame.id === 34));
+		expect(calls).toBe(33);
+		client.stop();
+	});
+
 	test("SidebarError code and candidate data survive without becoming internal", async () => {
 		const { client, last } = setup();
 		const candidates = [{ id: "folder-a", name: "Work" }, { id: "folder-b", name: "work" }];

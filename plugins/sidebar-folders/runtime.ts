@@ -8,8 +8,9 @@
  * (`localStorage`, key `bgb:sidebar-folders:sections`) answers, so folders always work and survive restarts.
  *
  * Ordering: each section's `agentIds` array is the order; `orderSectionAgents` applies it for display and
- * `dropAgent` rewrites it on a drop. A visible **New folder** icon sits in the sidebar header next to Search; right-clicking
- * empty sidebar space (including a folder's empty body) also offers New folder.
+ * `dropAgent` rewrites it on a drop. **New folder** sits on a Folders bar above the bot list (collapsed rail
+ * keeps a `folder-plus` in `__rail-actions`). Creating a folder focuses rename. Right-clicking empty sidebar
+ * space (including a folder's empty body) also offers New folder.
  */
 import { SidebarError, parseSidebarCommand, type PluginContext, type SidebarBot, type SidebarCommand, type SidebarFolder, type SidebarResult } from "@better-grok-bot/sdk";
 
@@ -267,34 +268,25 @@ export type SidebarFoldersRuntime = {
 export function emptySidebarSpace(target: EventTarget | null): Element | null {
 	if (!(target instanceof Element)) return null;
 	if (target.closest("button, a, input, textarea, select, [role='menu'], [role='menuitem'], [contenteditable='true']") !== null) return null;
-	if (target.closest(".sand-agents-section__header, [data-agent-id], [data-testid='pinned-agents']") !== null) return null;
+	if (target.closest(".sand-agents-section__header, .bgb-sidebar-folders__bar, [data-agent-id], [data-testid='pinned-agents']") !== null) return null;
 	const aside = target.closest("aside.sand-agents-sidebar") ?? target.closest("aside");
 	if (aside === null || aside.querySelector("button[data-agent-id]") === null) return null;
 	return aside;
 }
 
 export const NEW_FOLDER_BUTTON_CLASS = "bgb-sidebar-folders__new";
+export const FOLDERS_BAR_CLASS = "bgb-sidebar-folders__bar";
+export const RENAME_INPUT_CLASS = "bgb-sidebar-folders__rename";
 const FOLDER_PLUS_GLYPH = "\uEA80";
+const PLUS_GLYPH = "\uEA60";
 
-/** Icon-only New folder in the sidebar header actions, matching Search / New Bot. */
-export function insertNewFolderButton(aside: Element, onCreate: () => void): HTMLButtonElement {
-	const actions = aside.querySelector(".sand-agents-sidebar__new-actions, .sand-agents-sidebar__rail-actions");
-	const header = aside.querySelector(":scope > .sand-agents-sidebar__header");
-	const host = actions ?? header ?? aside;
-	const existing = aside.querySelector(`.${NEW_FOLDER_BUTTON_CLASS}`);
-	if (
-		existing instanceof HTMLButtonElement &&
-		host.contains(existing) &&
-		existing.getAttribute("aria-label") === "New folder" &&
-		!(existing.textContent ?? "").includes("New folder")
-	) {
-		return existing;
-	}
-	existing?.remove();
-	const document = aside.ownerDocument;
-	const template = host.querySelector<HTMLButtonElement>(
-		"button.sand-kit-icon-button, button[aria-label='Search'], button[aria-label='New Bot']",
-	);
+function iconButton(
+	document: Document,
+	template: HTMLButtonElement | null,
+	iconName: string,
+	glyph: string,
+	onCreate: () => void,
+): HTMLButtonElement {
 	const button = template !== null ? (template.cloneNode(true) as HTMLButtonElement) : document.createElement("button");
 	button.type = "button";
 	button.classList.add(NEW_FOLDER_BUTTON_CLASS);
@@ -315,14 +307,190 @@ export function insertNewFolderButton(aside: Element, onCreate: () => void): HTM
 		const kit = button.querySelector(".sand-kit-icon") ?? button;
 		kit.replaceChildren(icon);
 	}
-	icon.setAttribute("data-icon-name", "folder-plus");
-	icon.style.setProperty("--cursor-icon-content", `"${FOLDER_PLUS_GLYPH}"`);
+	icon.setAttribute("data-icon-name", iconName);
+	icon.style.setProperty("--cursor-icon-content", `"${glyph}"`);
 	if (icon.style.getPropertyValue("--icon-size") === "") icon.style.setProperty("--icon-size", "16px");
 	button.addEventListener("click", onCreate);
+	return button;
+}
+
+/** Icon-only New folder in the collapsed rail, left of Search. Expanded sidebars use {@link insertFoldersBar}. */
+export function insertNewFolderButton(aside: Element, onCreate: () => void): HTMLButtonElement | null {
+	const host = aside.querySelector(".sand-agents-sidebar__rail-actions");
+	if (host === null) return null;
+	const existing = host.querySelector(`.${NEW_FOLDER_BUTTON_CLASS}`);
+	if (
+		existing instanceof HTMLButtonElement &&
+		existing.getAttribute("aria-label") === "New folder" &&
+		!(existing.textContent ?? "").includes("New folder")
+	) {
+		return existing;
+	}
+	existing?.remove();
+	const document = aside.ownerDocument;
+	const template = host.querySelector<HTMLButtonElement>(
+		"button.sand-kit-icon-button, button[aria-label='Search'], button[aria-label='New Bot']",
+	);
+	const button = iconButton(document, template, "folder-plus", FOLDER_PLUS_GLYPH, onCreate);
 	const search = host.querySelector("button[aria-label='Search']");
 	if (search !== null && search !== button) search.before(button);
 	else host.prepend(button);
 	return button;
+}
+
+/** Folders section header above the bot list: label + ghost `+`. Not in the window header (traffic lights). */
+export function insertFoldersBar(aside: Element, onCreate: () => void): HTMLElement | null {
+	const rows = aside.querySelector(".sand-agents-list__rows");
+	const parent = rows?.parentElement;
+	if (rows == null || parent == null) return null;
+	const existing = parent.querySelector(`:scope > .${FOLDERS_BAR_CLASS}`);
+	if (existing instanceof HTMLElement) return existing;
+	const document = aside.ownerDocument;
+	const bar = document.createElement("div");
+	bar.className = FOLDERS_BAR_CLASS;
+	const label = document.createElement("span");
+	label.className = "bgb-sidebar-folders__bar-label";
+	label.textContent = "Folders";
+	const nativeIcon = aside.querySelector<HTMLElement>("button[aria-label='New Bot'] i.cursor-icon");
+	const button = document.createElement("button");
+	button.type = "button";
+	button.className = NEW_FOLDER_BUTTON_CLASS;
+	button.setAttribute("aria-label", "New folder");
+	button.title = "New folder";
+	const icon = nativeIcon !== null ? (nativeIcon.cloneNode(true) as HTMLElement) : document.createElement("i");
+	icon.classList.add("ui-icon", "cursor-icon");
+	icon.setAttribute("aria-hidden", "true");
+	icon.setAttribute("data-icon-name", "plus");
+	icon.style.setProperty("--cursor-icon-content", `"${PLUS_GLYPH}"`);
+	icon.style.setProperty("--icon-size", "14px");
+	button.replaceChildren(icon);
+	button.addEventListener("click", onCreate);
+	bar.append(label, button);
+	parent.insertBefore(bar, rows);
+	return bar;
+}
+
+/** Expanded list: Folders bar. Collapsed rail: header `folder-plus`. Strips a leftover header-actions clone. */
+export function mountFolderCreateControl(aside: Element, onCreate: () => void): HTMLElement | null {
+	const rail = aside.querySelector(".sand-agents-sidebar__rail-actions");
+	const expanded = aside.querySelector(".sand-agents-sidebar__new-actions");
+	for (const extra of aside.querySelectorAll(`.sand-agents-sidebar__header .${NEW_FOLDER_BUTTON_CLASS}`)) extra.remove();
+	if (rail !== null && expanded === null) {
+		aside.querySelector(`.${FOLDERS_BAR_CLASS}`)?.remove();
+		return insertNewFolderButton(aside, onCreate);
+	}
+	return insertFoldersBar(aside, onCreate);
+}
+
+function folderNameNode(header: HTMLElement): HTMLElement {
+	return (header.querySelector(".ui-text, .sand-kit-text") as HTMLElement | null) ?? header;
+}
+
+let renameWatch: MutationObserver | undefined;
+
+export function abortRenameOverlay(root?: Document | ParentNode): void {
+	renameWatch?.disconnect();
+	renameWatch = undefined;
+	const target = root ?? (typeof document === "undefined" ? undefined : document);
+	if (target === undefined) return;
+	const overlay = target.querySelector(`.${RENAME_INPUT_CLASS}`);
+	if (overlay instanceof HTMLElement) overlay.setAttribute("data-bgb-abort", "");
+	overlay?.remove();
+}
+
+function openRenameOverlay(header: HTMLElement, onCommit: (name: string) => void, onAbort?: () => void): HTMLInputElement {
+	abortRenameOverlay(header.ownerDocument);
+	const nameEl = folderNameNode(header);
+	const nameRect = nameEl.getBoundingClientRect();
+	const headerRect = header.getBoundingClientRect();
+	const input = header.ownerDocument.createElement("input");
+	input.type = "text";
+	input.className = RENAME_INPUT_CLASS;
+	input.value = (nameEl.textContent ?? "").trim() || "New folder";
+	input.setAttribute("aria-label", "Folder name");
+	const left = nameRect.width > 0 ? nameRect.left : headerRect.left + 36;
+	const top = nameRect.height > 0 ? nameRect.top : headerRect.top;
+	const height = nameRect.height > 0 ? nameRect.height : Math.max(headerRect.height, 16);
+	const width = Math.max(72, (headerRect.right || left + 120) - left - 28);
+	input.style.left = `${Math.round(left)}px`;
+	input.style.top = `${Math.round(top)}px`;
+	input.style.width = `${Math.round(width)}px`;
+	input.style.height = `${Math.round(height)}px`;
+	header.setAttribute("data-bgb-renaming", "");
+	let done = false;
+	const finish = (commit: boolean, aborted = false): void => {
+		if (done) return;
+		done = true;
+		header.removeAttribute("data-bgb-renaming");
+		const next = input.value.trim();
+		input.remove();
+		if (commit && next.length > 0) onCommit(next);
+		else if (aborted) onAbort?.();
+	};
+	input.addEventListener("pointerdown", (event) => event.stopPropagation());
+	input.addEventListener("keydown", (event) => {
+		if (event.key === "Enter") {
+			event.preventDefault();
+			finish(true);
+		} else if (event.key === "Escape") {
+			event.preventDefault();
+			finish(false, true);
+		}
+	});
+	input.addEventListener("blur", () => {
+		if (input.hasAttribute("data-bgb-abort")) finish(false);
+		else finish(true);
+	});
+	header.ownerDocument.body.append(input);
+	input.focus();
+	input.select();
+	return input;
+}
+
+/** After create: expand the folder, then native rename input, else a fixed overlay. */
+export function beginFolderRename(sectionId: string, onCommit: (name: string) => void, root: Document = document, onAbort?: () => void): void {
+	renameWatch?.disconnect();
+	renameWatch = undefined;
+	abortRenameOverlay(root);
+	const tryStart = (): boolean => {
+		const header = root.querySelector(`button.sand-agents-section__header[data-section-id="${CSS.escape(sectionId)}"]`);
+		if (!(header instanceof HTMLElement)) {
+			if (root.querySelector(`.${RENAME_INPUT_CLASS}`) !== null) {
+				abortRenameOverlay(root);
+				return true;
+			}
+			return false;
+		}
+		if (header.getAttribute("aria-expanded") === "false") header.click();
+		const native = header.querySelector("input");
+		if (native instanceof HTMLInputElement) {
+			abortRenameOverlay(root);
+			header.removeAttribute("data-bgb-renaming");
+			native.focus();
+			native.select();
+			return true;
+		}
+		if (root.querySelector(`.${RENAME_INPUT_CLASS}`) !== null) return false;
+		openRenameOverlay(header, onCommit, onAbort);
+		return false;
+	};
+	if (tryStart()) return;
+	const started = Date.now();
+	renameWatch = new MutationObserver(() => {
+		if (tryStart() || Date.now() - started > 2500) {
+			renameWatch?.disconnect();
+			renameWatch = undefined;
+		}
+	});
+	renameWatch.observe(root.documentElement, { childList: true, subtree: true });
+}
+
+export function markFolderDropTarget(sectionId: string | null, root: ParentNode = document): void {
+	for (const el of root.querySelectorAll(".sand-agents-section[data-bgb-drop]")) {
+		if (sectionId === null || el.getAttribute("data-section-id") !== sectionId) el.removeAttribute("data-bgb-drop");
+	}
+	if (sectionId === null || sectionId === UNSECTIONED_ID) return;
+	root.querySelector(`.sand-agents-section[data-section-id="${CSS.escape(sectionId)}"]`)?.setAttribute("data-bgb-drop", "");
 }
 
 export function createSidebarFolders(ctx: PluginContext): SidebarFoldersRuntime {
@@ -352,7 +520,7 @@ export function createSidebarFolders(ctx: PluginContext): SidebarFoldersRuntime 
 				return sections;
 			},
 			(error: unknown) => {
-				if (hostStores) throw error;
+				if (hostStores) ctx.log.warn("host folder read failed; keeping the last local copy", error);
 				return parseSections(local()) ?? [];
 			},
 		);
@@ -531,6 +699,7 @@ export function createSidebarFolders(ctx: PluginContext): SidebarFoldersRuntime 
 			}
 			case "delete-folder": {
 				const folder = folderFor(command.folder, sections);
+				abortRenameOverlay();
 				let deleted = folder;
 				const stored = await persistEdit(client, store, (current) => {
 					const found = current.find((section) => section.id === folder.id);
@@ -583,6 +752,12 @@ export function createSidebarFolders(ctx: PluginContext): SidebarFoldersRuntime 
 		}
 	};
 
+	const enqueueUi = (work: () => Promise<unknown> | unknown): Promise<unknown> => {
+		const run = commands.then(work, work);
+		commands = run.catch(() => {});
+		return run;
+	};
+
 	const executeSidebar = (command: SidebarCommand): Promise<SidebarResult> => {
 		const result = commands.then(() => execute(parseSidebarCommand(command))).catch((error: unknown) => {
 			if (error instanceof SidebarError) throw error;
@@ -613,25 +788,76 @@ export function createSidebarFolders(ctx: PluginContext): SidebarFoldersRuntime 
 			closeMenu();
 		}
 	};
+	const renameFolder = async (id: string, name: string): Promise<void> => {
+		const client = ctx.app.client;
+		const store = sectionsStore(client);
+		if (store === undefined) return;
+		await persistEdit(client, store, (sections) => sections.map((section) => (section.id === id ? { ...section, name } : section)));
+	};
 	const createFolder = (): void => {
 		closeMenu();
-		const commands = sectionCommands(ctx.app.client);
-		if (commands === undefined) {
-			ctx.log.warn("folders are not available yet");
-			return;
-		}
-		try {
-			if (commands.create([]) === null) ctx.log.warn("folders are not loaded yet; try again in a moment");
-		} catch (error) {
-			ctx.log.warn("could not create a folder", error);
-		}
+		void enqueueUi(async () => {
+			const client = ctx.app.client;
+			const store = sectionsStore(client);
+			const native = sectionCommands(client);
+			if (store === undefined || native === undefined) {
+				ctx.log.warn("folders are not available yet");
+				return;
+			}
+			const name = "New folder";
+			let createdId: string | null = null;
+			try {
+				const sections = readySections(store.sections.get());
+				const duplicate = [...sections, { id: UNSECTIONED_ID, name: "Unassigned", agentIds: [] }].find(
+					(section) => section.name.trim().normalize("NFC").toLowerCase() === name.toLowerCase(),
+				);
+				if (duplicate !== undefined) {
+					ctx.log.warn("A folder with that name already exists");
+					return;
+				}
+				await persistEdit(
+					client,
+					store,
+					(current) => {
+						if (!current.some((section) => section.id === createdId)) throw new SidebarError("unavailable", "The created folder is no longer available");
+						if (current.some((section) => section.id !== createdId && section.name.trim().normalize("NFC").toLowerCase() === name.toLowerCase())) {
+							throw new SidebarError("conflict", "A folder with that name already exists");
+						}
+						return current.map((section) => (section.id === createdId ? { ...section, name } : section));
+					},
+					() => {
+						createdId = native.create([]);
+						if (createdId === null || createdId === UNSECTIONED_ID) throw new SidebarError("unavailable", "Native folder creation is not ready");
+					},
+				);
+			} catch (error) {
+				ctx.log.warn("could not create a folder", error);
+				return;
+			}
+			if (createdId === null) return;
+			const id = createdId;
+			beginFolderRename(
+				id,
+				(next) => {
+					void enqueueUi(() => renameFolder(id, next)).catch((error: unknown) => {
+						ctx.log.warn("could not rename the folder", error);
+					});
+				},
+				globalThis.document,
+				() => {
+					void enqueueUi(() => execute({ operation: "delete-folder", folder: id })).catch((error: unknown) => {
+						ctx.log.warn("could not discard the untitled folder", error);
+					});
+				},
+			);
+		});
 	};
 	const mountNewFolder = (): void => {
 		const root = globalThis.document;
 		if (root === undefined) return;
 		const aside = root.querySelector("aside.sand-agents-sidebar");
 		if (aside === null) return;
-		insertNewFolderButton(aside, createFolder);
+		mountFolderCreateControl(aside, createFolder);
 	};
 	mountNewFolder();
 	const root = globalThis.document;
@@ -674,6 +900,9 @@ export function createSidebarFolders(ctx: PluginContext): SidebarFoldersRuntime 
 	let drag: { agentId: string; sectionId: string } | null = null;
 	let pointerY: number | null = null;
 	let line: HTMLDivElement | null = null;
+	let capturedPointerId: number | null = null;
+
+	const captureHost = (): Element | null => document.querySelector("aside.sand-agents-sidebar") ?? document.documentElement;
 
 	const hideLine = (): void => {
 		line?.remove();
@@ -697,16 +926,34 @@ export function createSidebarFolders(ctx: PluginContext): SidebarFoldersRuntime 
 	};
 
 	const stop = (): void => {
+		if (capturedPointerId !== null) {
+			try {
+				captureHost()?.releasePointerCapture(capturedPointerId);
+			} catch {
+				/* pointer already released */
+			}
+			capturedPointerId = null;
+		}
 		drag = null;
 		pointerY = null;
 		hideLine();
+		markFolderDropTarget(null);
 		window.removeEventListener("pointermove", onPointerMove, true);
 		window.removeEventListener("pointerup", onPointerEnd, true);
 		window.removeEventListener("pointercancel", onPointerEnd, true);
+		window.removeEventListener("lostpointercapture", onPointerEnd, true);
 		window.removeEventListener("keydown", onKeyDown, true);
 	};
 	const onPointerMove = (event: PointerEvent): void => {
 		pointerY = event.clientY;
+		if (capturedPointerId === null) {
+			try {
+				captureHost()?.setPointerCapture(event.pointerId);
+				capturedPointerId = event.pointerId;
+			} catch {
+				/* not an active pointer — window listeners still track the drag */
+			}
+		}
 		drawLine();
 	};
 	// The drop handler runs on the same pointerup; clear afterwards so it still sees the last position.
@@ -736,14 +983,17 @@ export function createSidebarFolders(ctx: PluginContext): SidebarFoldersRuntime 
 		if (!inFolder) {
 			drag = null;
 			hideLine();
+			markFolderDropTarget(null);
 			return;
 		}
 		const wasIdle = drag === null && line === null && pointerY === null;
 		drag = { agentId: a.id as string, sectionId: o.id as string };
+		markFolderDropTarget(o.id as string);
 		if (wasIdle) {
 			window.addEventListener("pointermove", onPointerMove, true);
 			window.addEventListener("pointerup", onPointerEnd, true);
 			window.addEventListener("pointercancel", onPointerEnd, true);
+			window.addEventListener("lostpointercapture", onPointerEnd, true);
 			window.addEventListener("keydown", onKeyDown, true);
 		}
 		drawLine();
@@ -760,12 +1010,12 @@ export function createSidebarFolders(ctx: PluginContext): SidebarFoldersRuntime 
 		const ids = selectedSidebarAgentIds(agentId);
 		const slot = y === null ? { beforeId: null, afterId: null } : slotAt(sectionRows(sectionId, new Set(ids)).rows, y);
 		if (placeAgents(current, ids, sectionId, slot.beforeId, slot.afterId) === null) return undefined;
-		try {
-			store.edit((sections) => placeAgents(sections, ids, sectionId, slot.beforeId, slot.afterId) ?? sections);
-		} catch (error) {
+		const client = ctx.app.client;
+		void enqueueUi(() =>
+			persistEdit(client, store, (sections) => placeAgents(sections, ids, sectionId, slot.beforeId, slot.afterId) ?? sections),
+		).catch((error: unknown) => {
 			ctx.log.warn("could not reorder the section", error);
-			return undefined;
-		}
+		});
 		return true;
 	};
 

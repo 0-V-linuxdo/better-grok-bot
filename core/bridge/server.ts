@@ -25,6 +25,7 @@ import {
 	type HelperToAgent,
 	SHUTDOWN_PATH,
 	type SidebarCommand,
+	type SidebarRequestFrame,
 	type SidebarResult,
 	parseSidebarCommand,
 	type ServerFrame,
@@ -82,8 +83,8 @@ export interface Bridge {
 	closeHelper(connectionId: number, code?: number, reason?: string): void;
 	renderers(): RendererConnection[];
 	helpers(): HelperConnection[];
-	/** Sends once to this exact capable renderer; disconnect/timeout never replays a mutation. */
-	requestSidebar(connectionId: number, command: SidebarCommand, timeoutMs?: number): Promise<SidebarResult>;
+	/** Sends once to this exact capable renderer; disconnect/timeout never replays a mutation. Optional `requestId` is echoed so the renderer can replay an identical intent. */
+	requestSidebar(connectionId: number, command: SidebarCommand, timeoutMs?: number, requestId?: string): Promise<SidebarResult>;
 	/** Closes every connection (`code`, default 1001) and stops listening. */
 	stop(opts?: { code?: number; reason?: string }): Promise<void>;
 }
@@ -385,7 +386,7 @@ export function startBridge(opts: BridgeOptions): Bridge {
 			if (ws?.data.role === "helper") ws.close(code, reason);
 		},
 		renderers: () => renderers().map(([, renderer]) => renderer),
-		async requestSidebar(connectionId, value, timeoutMs = 20_000) {
+		async requestSidebar(connectionId, value, timeoutMs = 20_000, requestId?: string) {
 			const command = parseSidebarCommand(value);
 			if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new BgbError("bad-request", "Sidebar deadline must be positive finite milliseconds");
 			const ws = sockets.get(connectionId);
@@ -396,11 +397,14 @@ export function startBridge(opts: BridgeOptions): Bridge {
 			const id = nextSidebarId++;
 			const { promise, resolve, reject } = Promise.withResolvers<SidebarResult>();
 			const timer = sidebarClock.setTimeout(() => {
-				finishSidebar(id)?.reject(new BgbError("unavailable", `Sidebar request timed out after ${timeoutMs / 1000} s; the operation's outcome is unknown. Check sidebar state before trying another mutation.`));
+				finishSidebar(id)?.reject(new BgbError("unavailable", `Sidebar request timed out after ${timeoutMs / 1000} s; the operation's outcome is unknown. List folders, then retry with the same requestId.`));
 			}, timeoutMs);
 			pendingSidebar.set(id, { socket: ws, operation: command.operation, resolve, reject, timer });
 			try {
-				if (ws.send(JSON.stringify({ type: "sidebar.req", id, command } satisfies ServerFrame)) === 0) {
+				const frame: SidebarRequestFrame = requestId
+					? { type: "sidebar.req", id, command, requestId }
+					: { type: "sidebar.req", id, command };
+				if (ws.send(JSON.stringify(frame satisfies ServerFrame)) === 0) {
 					throw new Error("The sidebar request could not be sent");
 				}
 			} catch {

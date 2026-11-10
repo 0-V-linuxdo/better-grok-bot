@@ -62,7 +62,7 @@ const ERROR_CODES: Record<BridgeErrorCode, true> = {
 	unavailable: true,
 	internal: true,
 };
-const SIDEBAR_REQUEST_KEYS: Record<string, true> = { type: true, id: true, command: true };
+const SIDEBAR_REQUEST_KEYS: Record<string, true> = { type: true, id: true, command: true, requestId: true };
 
 function isErrorCode(value: unknown): value is BridgeErrorCode {
 	return typeof value === "string" && Object.hasOwn(ERROR_CODES, value);
@@ -124,6 +124,9 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
 	let nextId = 1;
 	let lastSidebarId = 0;
 	let sidebarHandler: ((command: SidebarCommand) => Promise<SidebarResult>) | null = null;
+	const sidebarReplay = new Map<string, Promise<SidebarResult>>();
+	const sidebarReplaySettled = new Set<string>();
+	const SIDEBAR_REPLAY_MAX = 32;
 	const reportedCloseCodes = new Set<number>();
 	const pending = new Map<number, Pending>();
 	const stateListeners = new Set<(state: BridgeState) => void>();
@@ -289,10 +292,33 @@ export function createBridgeClient(options: BridgeClientOptions): BridgeClient {
 			const command = parseSidebarCommand(frame.command);
 			const handler = sidebarHandler;
 			if (!handler) throw new SidebarError("unavailable", "This renderer has no sidebar folders handler");
-			const result = await handler(command);
-			if (!isSidebarResult(result) || result.operation !== command.operation) {
-				throw new SidebarError("internal", "The sidebar handler returned an invalid result; the outcome is unknown. Check sidebar state before trying another mutation.");
+			const requestId = typeof frame.requestId === "string" && frame.requestId.length > 0 ? frame.requestId : undefined;
+			const run = (): Promise<SidebarResult> => Promise.resolve(handler(command)).then((result) => {
+				if (!isSidebarResult(result) || result.operation !== command.operation) {
+					throw new SidebarError("internal", "The sidebar handler returned an invalid result; the outcome is unknown. Check sidebar state before trying another mutation.");
+				}
+				return result;
+			});
+			let pending = requestId !== undefined ? sidebarReplay.get(requestId) : undefined;
+			if (pending === undefined) {
+				pending = run();
+				if (requestId !== undefined) {
+					sidebarReplay.set(requestId, pending);
+					void pending.finally(() => sidebarReplaySettled.add(requestId));
+					while (sidebarReplay.size > SIDEBAR_REPLAY_MAX) {
+						let evicted = false;
+						for (const key of sidebarReplay.keys()) {
+							if (!sidebarReplaySettled.has(key)) continue;
+							sidebarReplay.delete(key);
+							sidebarReplaySettled.delete(key);
+							evicted = true;
+							break;
+						}
+						if (!evicted) break;
+					}
+				}
 			}
+			const result = await pending;
 			response = { type: "sidebar.res", id, ok: true, result };
 		} catch (error) {
 			const known = isSidebarError(error) || error instanceof BridgeRequestError;

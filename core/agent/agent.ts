@@ -16,6 +16,7 @@ import { type AppInstall, HookConflictError } from "../platform/types.ts";
 import type { CommandRunner } from "../services/command.ts";
 import { Services, type ServicesOptions } from "../services/index.ts";
 import { McpServers } from "../services/mcp.ts";
+import { recoverBinaryJournal } from "../setup/binaries.ts";
 import { type State, mutateState, readState } from "../state.ts";
 import { type UpdateDeps, applyUpdate, checkForUpdate, compareVersions } from "../update/self-update.ts";
 import { BGB_COMPILED, BGB_VERSION } from "../version.ts";
@@ -129,6 +130,7 @@ export class Agent {
 	/** Binds the bridge and starts every subsystem; throws a user-facing message when the port is taken. */
 	async start(): Promise<void> {
 		const { ctx, deps } = this;
+		await recoverBinaryJournal(ctx);
 		await this.services.start();
 		try {
 			this.bridge = startBridge({
@@ -180,6 +182,8 @@ export class Agent {
 		const state = await mutateState(ctx.paths, (draft) => {
 			draft.renderers = [];
 			draft.services = this.services.snapshot();
+			// Invariant: a healthy new agent of the pending version owns "the update landed".
+			// The watchdog restores previous only when /health never shows this version.
 			if (draft.update.pending?.version === BGB_VERSION) draft.update.pending = null;
 		});
 		this.currentBuildKey = state.lastBuild?.key ?? null;

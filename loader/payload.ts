@@ -12,6 +12,7 @@ function isStringArray(value: unknown): value is string[] {
 
 const SOURCES: Record<PluginSource, true> = { core: true, bundled: true, community: true, dev: true };
 const STATES: Record<PluginState, true> = {
+	loading: true,
 	active: true,
 	disabled: true,
 	"patch-failed": true,

@@ -2,10 +2,16 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:tes
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import type { PluginContext, SidebarCommand, SidebarResult } from "@better-grok-bot/sdk";
 import {
+	beginFolderRename,
+	abortRenameOverlay,
 	createSidebarFolders,
 	emptySidebarSpace,
 	insertNewFolderButton,
+	markFolderDropTarget,
+	mountFolderCreateControl,
 	NEW_FOLDER_BUTTON_CLASS,
+	FOLDERS_BAR_CLASS,
+	RENAME_INPUT_CLASS,
 	orderByIds,
 	parseSections,
 	placeAgent,
@@ -149,6 +155,14 @@ describe("folder storage", () => {
 		expect(await plugin.readSections(Promise.resolve([folder]))).toEqual([folder]);
 		expect(store.get(STORAGE_KEY)).toEqual([folder]);
 		await expect(plugin.writeSections(Promise.reject(new Error("offline")), [])).rejects.toThrow("offline");
+	});
+
+	test("after a host list, a later host read reject keeps the mirrored copy", async () => {
+		const { ctx, store } = fakeContext({ [STORAGE_KEY]: [] });
+		const plugin = createSidebarFolders(ctx);
+		expect(await plugin.readSections(Promise.resolve([folder]))).toEqual([folder]);
+		expect(await plugin.readSections(Promise.reject(new Error("offline")))).toEqual([folder]);
+		expect(store.get(STORAGE_KEY)).toEqual([folder]);
 	});
 
 	test("read failure falls back to the local copy, or an empty list so folders can still be created", async () => {
@@ -907,28 +921,85 @@ describe("emptySidebarSpace", () => {
 		document.body.innerHTML = `<aside class="sand-agents-sidebar"><div class="sand-agents-section" data-section-id="work"><button class="sand-agents-section__header" data-section-id="work">Work</button><div class="sand-agents-section__empty">Empty</div></div><button data-agent-id="bot">Bot</button></aside>`;
 		expect(emptySidebarSpace(document.querySelector(".sand-agents-section__empty"))?.className).toBe("sand-agents-sidebar");
 	});
+
+	test("the Folders bar is not empty space", () => {
+		document.body.innerHTML = `<aside class="sand-agents-sidebar"><div class="bgb-sidebar-folders__bar"><span>Folders</span></div><button data-agent-id="bot">Bot</button></aside>`;
+		expect(emptySidebarSpace(document.querySelector(".bgb-sidebar-folders__bar"))).toBeNull();
+	});
+});
+
+describe("insertFoldersBar", () => {
+	beforeAll(() => GlobalRegistrator.register());
+	afterAll(() => {
+		document.body.replaceChildren();
+		GlobalRegistrator.unregister();
+	});
+	beforeEach(() => document.body.replaceChildren());
+
+	test("places a Folders bar with + before the bot list, not in the header", () => {
+		document.body.innerHTML = `<aside class="sand-agents-sidebar"><div class="sand-agents-sidebar__header"><div class="sand-agents-sidebar__new-actions"><button aria-label="Search" class="sand-kit-icon-button"><span class="sand-kit-icon"><i class="cursor-icon" data-icon-name="search"></i></span></button><button aria-label="New Bot" class="sand-kit-icon-button"><span class="sand-kit-icon"><i class="cursor-icon" data-icon-name="plus"></i></span></button></div></div><div class="ui-scroll-area__content"><div class="sand-agents-list__rows"><button data-agent-id="bot">Bot</button></div></div></aside>`;
+		const aside = document.querySelector("aside") as HTMLElement;
+		const created: number[] = [];
+		const first = mountFolderCreateControl(aside, () => created.push(1));
+		const second = mountFolderCreateControl(aside, () => created.push(2));
+		expect(second).toBe(first);
+		expect(aside.querySelector(".sand-agents-sidebar__header .bgb-sidebar-folders__new")).toBeNull();
+		expect(aside.querySelector(".sand-agents-sidebar__new-actions .bgb-sidebar-folders__new")).toBeNull();
+		const bar = aside.querySelector(`.${FOLDERS_BAR_CLASS}`) as HTMLElement;
+		const rows = aside.querySelector(".sand-agents-list__rows") as HTMLElement;
+		expect(bar).not.toBeNull();
+		expect(bar.nextElementSibling).toBe(rows);
+		expect(bar.querySelector(".bgb-sidebar-folders__bar-label")?.textContent).toBe("Folders");
+		const button = bar.querySelector(`.${NEW_FOLDER_BUTTON_CLASS}`) as HTMLButtonElement;
+		expect(button.getAttribute("aria-label")).toBe("New folder");
+		expect(button.querySelector("[data-icon-name='plus']")).not.toBeNull();
+		button.click();
+		expect(created).toEqual([1]);
+	});
+
+	test("Folders bar CSS shares section-header inset and the count-column plus", async () => {
+		const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
+		expect(css).toContain("padding: 8px 8px 6px");
+		expect(css).not.toContain("padding: 6px 8px 4px 12px");
+		expect(css).toContain("--icon-size: 14px");
+		expect(css).toContain("letter-spacing: 0.02em");
+		expect(css).toContain("background: var(--cursor-bg-editor, #161616)");
+		expect(css).toContain("[data-bgb-renaming]");
+		expect(css).toContain(".bgb-sidebar-folders__bar .bgb-sidebar-folders__new {\n	appearance: none;\n	display: inline-flex;\n	align-items: center;\n	justify-content: center;\n	flex-shrink: 0;\n	width: 16px;\n	height: 16px;");
+	});
+
+	test("strips a leftover header New folder clone", () => {
+		document.body.innerHTML = `<aside class="sand-agents-sidebar"><div class="sand-agents-sidebar__header"><div class="sand-agents-sidebar__new-actions"><button class="${NEW_FOLDER_BUTTON_CLASS}" aria-label="New folder">old</button><button aria-label="Search" class="sand-kit-icon-button">Search</button></div></div><div class="ui-scroll-area__content"><div class="sand-agents-list__rows"><button data-agent-id="bot">Bot</button></div></div></aside>`;
+		const aside = document.querySelector("aside") as HTMLElement;
+		mountFolderCreateControl(aside, () => {});
+		expect(aside.querySelector(".sand-agents-sidebar__header .bgb-sidebar-folders__new")).toBeNull();
+		expect(aside.querySelector(`.${FOLDERS_BAR_CLASS}`)).not.toBeNull();
+	});
 });
 
 describe("insertNewFolderButton", () => {
-	beforeAll(() => GlobalRegistrator.register());
+	beforeAll(() => {
+		try {
+			GlobalRegistrator.register();
+		} catch {
+			/* already registered by a sibling describe */
+		}
+	});
+	afterAll(() => {
+		document.body.replaceChildren();
+		try {
+			GlobalRegistrator.unregister();
+		} catch {
+			/* not registered */
+		}
+	});
 	beforeEach(() => document.body.replaceChildren());
 
-	test("places an icon-only New folder control in the header actions, left of Search", () => {
-		document.body.innerHTML = `<aside class="sand-agents-sidebar"><div class="sand-agents-sidebar__header"><div class="sand-agents-sidebar__new-actions"><button aria-label="Search" class="sand-kit-icon-button"><span class="sand-kit-icon"><i class="cursor-icon" data-icon-name="search" style="--icon-size: 16px"></i></span></button><button aria-label="New Bot" class="sand-kit-icon-button"><span class="sand-kit-icon"><i class="cursor-icon" data-icon-name="plus"></i></span></button></div></div><button data-agent-id="bot">Bot</button></aside>`;
+	test("does not inject into expanded header actions", () => {
+		document.body.innerHTML = `<aside class="sand-agents-sidebar"><div class="sand-agents-sidebar__header"><div class="sand-agents-sidebar__new-actions"><button aria-label="Search" class="sand-kit-icon-button"><span class="sand-kit-icon"><i class="cursor-icon" data-icon-name="search"></i></span></button></div></div></aside>`;
 		const aside = document.querySelector("aside") as HTMLElement;
-		const created: number[] = [];
-		const first = insertNewFolderButton(aside, () => created.push(1));
-		const second = insertNewFolderButton(aside, () => created.push(2));
-		expect(second).toBe(first);
-		expect(aside.querySelectorAll(`.${NEW_FOLDER_BUTTON_CLASS}`).length).toBe(1);
-		const actions = aside.querySelector(".sand-agents-sidebar__new-actions") as HTMLElement;
-		expect(first.parentElement).toBe(actions);
-		expect(first.nextElementSibling?.getAttribute("aria-label")).toBe("Search");
-		expect(first.getAttribute("aria-label")).toBe("New folder");
-		expect(first.textContent).not.toContain("New folder");
-		expect(first.querySelector("[data-icon-name='folder-plus']")).not.toBeNull();
-		first.click();
-		expect(created).toEqual([1]);
+		expect(insertNewFolderButton(aside, () => {})).toBeNull();
+		expect(aside.querySelector(`.${NEW_FOLDER_BUTTON_CLASS}`)).toBeNull();
 	});
 
 	test("places New folder in the collapsed rail actions when those exist", () => {
@@ -936,9 +1007,122 @@ describe("insertNewFolderButton", () => {
 		const aside = document.querySelector("aside") as HTMLElement;
 		const button = insertNewFolderButton(aside, () => {});
 		const rail = aside.querySelector(".sand-agents-sidebar__rail-actions") as HTMLElement;
-		expect(button.parentElement).toBe(rail);
-		expect(button.nextElementSibling?.getAttribute("aria-label")).toBe("Search");
-		expect(button.querySelector("[data-icon-name='folder-plus']")).not.toBeNull();
+		expect(button).not.toBeNull();
+		expect(button?.parentElement).toBe(rail);
+		expect(button?.nextElementSibling?.getAttribute("aria-label")).toBe("Search");
+		expect(button?.querySelector("[data-icon-name='folder-plus']")).not.toBeNull();
+	});
+});
+
+describe("beginFolderRename", () => {
+	beforeAll(() => {
+		try {
+			GlobalRegistrator.register();
+		} catch {
+			/* already registered by a sibling describe */
+		}
+	});
+	afterAll(() => {
+		document.body.replaceChildren();
+		try {
+			GlobalRegistrator.unregister();
+		} catch {
+			/* not registered */
+		}
+	});
+	beforeEach(() => document.body.replaceChildren());
+
+	test("focuses a native rename input when the header already has one", () => {
+		document.body.innerHTML = `<button class="sand-agents-section__header" data-section-id="work" aria-expanded="true"><input value="Work" /><span class="ui-text">Work</span></button>`;
+		const input = document.querySelector("input") as HTMLInputElement;
+		beginFolderRename("work", () => {});
+		expect(document.activeElement).toBe(input);
+		expect(document.querySelector(`.${RENAME_INPUT_CLASS}`)).toBeNull();
+	});
+
+	test("opens an overlay, commits on Enter, ignores Escape", () => {
+		document.body.innerHTML = `<button class="sand-agents-section__header" data-section-id="work" aria-expanded="true"><span class="ui-text">New folder</span></button>`;
+		const names: string[] = [];
+		beginFolderRename("work", (name) => names.push(name));
+		const input = document.querySelector(`.${RENAME_INPUT_CLASS}`) as HTMLInputElement;
+		expect(input).not.toBeNull();
+		expect(input.value).toBe("New folder");
+		expect(document.querySelector(".sand-agents-section__header")?.hasAttribute("data-bgb-renaming")).toBe(true);
+		input.value = "Archive";
+		input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+		expect(names).toEqual(["Archive"]);
+		expect(document.querySelector(`.${RENAME_INPUT_CLASS}`)).toBeNull();
+		expect(document.querySelector(".sand-agents-section__header")?.hasAttribute("data-bgb-renaming")).toBe(false);
+
+		beginFolderRename("work", (name) => names.push(name));
+		const again = document.querySelector(`.${RENAME_INPUT_CLASS}`) as HTMLInputElement;
+		again.value = "Nope";
+		again.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+		expect(names).toEqual(["Archive"]);
+		expect(document.querySelector(".sand-agents-section__header")?.hasAttribute("data-bgb-renaming")).toBe(false);
+	});
+
+	test("Escape on a never-renamed overlay calls onAbort", () => {
+		document.body.innerHTML = `<button class="sand-agents-section__header" data-section-id="work" aria-expanded="true"><span class="ui-text">New folder</span></button>`;
+		const names: string[] = [];
+		let aborted = 0;
+		beginFolderRename("work", (name) => names.push(name), document, () => aborted++);
+		const input = document.querySelector(`.${RENAME_INPUT_CLASS}`) as HTMLInputElement;
+		input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+		expect(names).toEqual([]);
+		expect(aborted).toBe(1);
+	});
+
+	test("a native input that appears later replaces the overlay without committing", () => {
+		document.body.innerHTML = `<button class="sand-agents-section__header" data-section-id="work" aria-expanded="true"><span class="ui-text">New folder</span></button>`;
+		const names: string[] = [];
+		beginFolderRename("work", (name) => names.push(name));
+		expect(document.querySelector(`.${RENAME_INPUT_CLASS}`)).not.toBeNull();
+		const header = document.querySelector(".sand-agents-section__header") as HTMLElement;
+		const native = document.createElement("input");
+		native.value = "Work";
+		header.append(native);
+		beginFolderRename("work", (name) => names.push(name));
+		expect(document.querySelector(`.${RENAME_INPUT_CLASS}`)).toBeNull();
+		expect(document.activeElement).toBe(native);
+		expect(names).toEqual([]);
+		expect(header.hasAttribute("data-bgb-renaming")).toBe(false);
+	});
+
+	test("re-entering beginFolderRename aborts the overlay without committing", () => {
+		document.body.innerHTML = `<button class="sand-agents-section__header" data-section-id="work" aria-expanded="true"><span class="ui-text">New folder</span></button>`;
+		const names: string[] = [];
+		beginFolderRename("work", (name) => names.push(name));
+		const first = document.querySelector(`.${RENAME_INPUT_CLASS}`) as HTMLInputElement;
+		first.value = "Should not commit";
+		beginFolderRename("work", (name) => names.push(name));
+		expect(names).toEqual([]);
+		expect(document.querySelector(`.${RENAME_INPUT_CLASS}`)).not.toBeNull();
+		abortRenameOverlay();
+		expect(document.querySelector(`.${RENAME_INPUT_CLASS}`)).toBeNull();
+		expect(names).toEqual([]);
+	});
+});
+
+describe("markFolderDropTarget", () => {
+	beforeAll(() => {
+		try {
+			GlobalRegistrator.register();
+		} catch {
+			/* already registered by a sibling describe */
+		}
+	});
+	beforeEach(() => document.body.replaceChildren());
+
+	test("marks the folder section and clears the previous one", () => {
+		document.body.innerHTML = `<div class="sand-agents-section" data-section-id="a"></div><div class="sand-agents-section" data-section-id="b"></div>`;
+		markFolderDropTarget("a");
+		expect(document.querySelector('[data-section-id="a"]')?.hasAttribute("data-bgb-drop")).toBe(true);
+		markFolderDropTarget("b");
+		expect(document.querySelector('[data-section-id="a"]')?.hasAttribute("data-bgb-drop")).toBe(false);
+		expect(document.querySelector('[data-section-id="b"]')?.hasAttribute("data-bgb-drop")).toBe(true);
+		markFolderDropTarget(null);
+		expect(document.querySelector("[data-bgb-drop]")).toBeNull();
 	});
 });
 
@@ -967,5 +1151,50 @@ describe("selectedSidebarAgentIds", () => {
 			<button data-agent-id="b"></button>
 		</aside>`;
 		expect(selectedSidebarAgentIds("b")).toEqual(["b"]);
+	});
+});
+
+describe("UI create folder", () => {
+	beforeAll(() => {
+		try {
+			GlobalRegistrator.register();
+		} catch {
+			/* already registered by a sibling describe */
+		}
+	});
+	beforeEach(() => document.body.replaceChildren());
+
+	test("Esc after + with no Enter deletes the untitled folder", async () => {
+		document.body.innerHTML = `<aside class="sand-agents-sidebar"><div class="sand-agents-list"><div class="sand-agents-list__rows"></div></div><button class="sand-agents-section__header" data-section-id="native-generated-folder" aria-expanded="true"><span class="ui-text">New folder</span></button></aside>`;
+		const fixture = await nativeFixture();
+		const button = document.querySelector(`.${NEW_FOLDER_BUTTON_CLASS}`) as HTMLButtonElement;
+		expect(button).not.toBeNull();
+		button.click();
+		const started = Date.now();
+		while (document.querySelector(`.${RENAME_INPUT_CLASS}`) === null && Date.now() - started < 500) await Bun.sleep(10);
+		const input = document.querySelector(`.${RENAME_INPUT_CLASS}`) as HTMLInputElement;
+		expect(input).not.toBeNull();
+		input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+		await fixture.native.waitForWrites(3);
+		expect(await fixture.plugin.executeSidebar({ operation: "list-folders" })).toEqual({
+			operation: "list-folders",
+			folders: [
+				{ id: "work", name: "Work", botIds: ["one", "two"] },
+				{ id: "play", name: "Play", botIds: ["three"] },
+			],
+		});
+	});
+
+	test("delete-folder aborts a live rename overlay without committing", async () => {
+		document.body.innerHTML = `<aside class="sand-agents-sidebar"><button class="sand-agents-section__header" data-section-id="work" aria-expanded="true"><span class="ui-text">Work</span></button></aside>`;
+		const fixture = await nativeFixture();
+		const names: string[] = [];
+		beginFolderRename("work", (name) => names.push(name));
+		const input = document.querySelector(`.${RENAME_INPUT_CLASS}`) as HTMLInputElement;
+		expect(input).not.toBeNull();
+		input.value = "Should not commit";
+		await fixture.plugin.executeSidebar({ operation: "delete-folder", folder: "work" });
+		expect(document.querySelector(`.${RENAME_INPUT_CLASS}`)).toBeNull();
+		expect(names).toEqual([]);
 	});
 });

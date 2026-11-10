@@ -39,6 +39,28 @@ describe("services client", () => {
 		expect(socket.lastRequest("keys.watch").params).toEqual({ codes: ["AltRight"] });
 	});
 
+	test("a failed keys.watch is retried on the next sync", async () => {
+		const { services, socket } = setup();
+		services.keysFor("push-to-talk").watch("AltRight", () => {});
+		expect(socket.requests("keys.watch")).toHaveLength(1);
+		socket.fail(socket.lastRequest("keys.watch"), "unavailable", "helper down");
+		for (let turn = 0; turn < 10; turn++) await Promise.resolve();
+		// Same union: if sentCodes had been set before the RPC resolved, this would not send.
+		services.keysFor("other").watch("AltRight", () => {});
+		expect(socket.requests("keys.watch")).toHaveLength(2);
+		expect(socket.lastRequest("keys.watch").params).toEqual({ codes: ["AltRight"] });
+	});
+
+	test("last unwatch of a held key delivers false", () => {
+		const { services, socket } = setup();
+		const events: boolean[] = [];
+		const stop = services.keysFor("push-to-talk").watch("AltRight", (down) => events.push(down));
+		socket.event("keys.key", { code: "AltRight", down: true });
+		expect(events).toEqual([true]);
+		stop();
+		expect(events).toEqual([true, false]);
+	});
+
 	test("non-watchable codes are refused before they reach the agent", () => {
 		const { services, socket } = setup();
 		expect(() => services.keysFor("p").watch("KeyA", () => {})).toThrow(RangeError);

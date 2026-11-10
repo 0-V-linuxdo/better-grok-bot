@@ -273,6 +273,29 @@ test("a successful setup installs everything, records the hook and restarts a ru
 	expect(host.out.at(-1)).toBe("Open Grok Bot → Settings → Better Grok Bot");
 });
 
+test("a failed undo is recorded as residual and still exits 1", async () => {
+	const ctx = await context({
+		hookInstall: async () => {
+			throw new Error("hook exploded");
+		},
+	});
+	await installOldBinary(ctx);
+	const code = await runSetup(
+		ctx,
+		{ ...OPTS, app: path.join(root, "Grok Bot.app") },
+		deps({
+			readLiveAgent: async () => LIVE_AGENT,
+			restorePrevious: async () => {
+				calls.push({ name: "restorePrevious", args: [] });
+				throw new Error("EACCES");
+			},
+		}),
+	);
+	expect(code).toBe(1);
+	expect(host.err.some((line) => line.includes("setup undo left residual"))).toBe(true);
+	expect((await readState(ctx.paths)).setupResidual).toEqual(["restore the previous bgb binaries: EACCES"]);
+});
+
 test("--no-restart leaves a running Grok Bot alone and says so", async () => {
 	const ctx = await context({ findRunningApp: async () => ({ pid: 4242 }) });
 	expect(await runSetup(ctx, { ...OPTS, yes: true, noRestart: true, noAutostart: true }, deps())).toBe(0);

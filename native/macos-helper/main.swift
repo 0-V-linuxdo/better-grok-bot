@@ -736,8 +736,9 @@ let tapCallback: CGEventTapCallBack = { _, type, event, _ in
 
 func setTap(enabled want: Bool) {
 	guard let tap = eventTap, want != tapEnabled else { return }
-	CGEvent.tapEnable(tap: tap, enable: want)
+	// Flip the want-flag first so our own tapEnable(false) arriving as tapDisabledByUserInput is a no-op.
 	tapEnabled = want
+	CGEvent.tapEnable(tap: tap, enable: want)
 	log("event tap \(want ? "enabled" : "disabled")")
 }
 

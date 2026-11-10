@@ -39,7 +39,7 @@ async function list(env: CommandEnv): Promise<number> {
 		const result = status && status.state !== "disabled" ? status : undefined;
 		const state = plugin.state ?? result?.state ?? "not built yet";
 		const version = plugin.definition?.version ?? plugin.pkg?.version ?? "?";
-		const mark = state === "active" ? "✓" : state === "disabled" || state === "unsupported-platform" ? "-" : state === "not built yet" ? "·" : "✗";
+		const mark = state === "active" ? "✓" : state === "disabled" || state === "unsupported-platform" || state === "loading" ? "-" : state === "not built yet" ? "·" : "✗";
 		const error = plugin.errors[0] ?? (plugin.state === undefined ? result?.errors[0] : undefined);
 		env.io.out(`${mark} ${plugin.id} ${version} (${plugin.source}) — ${state}${error ? `: ${error}` : ""}`);
 	}

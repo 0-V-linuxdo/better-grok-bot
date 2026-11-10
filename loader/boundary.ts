@@ -1,6 +1,6 @@
 import type { JsxFn, PluginLogger, ReactLike } from "../sdk/index.ts";
 
-/** Stand-in for any component that cannot be built: renders nothing. */
+/** Stand-in for any component that cannot be built: renders nothing. */ 
 export const NullComponent = (): null => null;
 
 interface BoundaryState {
@@ -9,36 +9,34 @@ interface BoundaryState {
 
 /**
  * Wraps a component in an error boundary built from the app's own React. A crash is sticky for
- * this component: the crashing instance and every later instance render `null`, so a broken
- * plugin cannot keep re-throwing into React.
+ * that mounted instance until React remounts it (a new `key`). Do not share a closure flag across
+ * instances — that made Settings/plugin UI unrecoverable until process quit.
  */
 export function createBoundary(React: ReactLike, jsx: JsxFn, inner: unknown, label: string, log: PluginLogger): unknown {
-	let failed = false;
-	let reported = false;
-
 	class BetterGrokBotBoundary extends React.Component {
 		static displayName = label;
 
 		static getDerivedStateFromError(): BoundaryState {
-			failed = true;
 			return { failed: true };
 		}
 
+		declare state: BoundaryState;
+		private reported = false;
+
 		constructor(props: Record<string, unknown>) {
 			super(props);
-			const state: BoundaryState = { failed };
-			this.state = state;
+			this.state = { failed: false };
 		}
 
 		componentDidCatch(error: unknown): void {
-			if (reported) return;
-			reported = true;
+			if (this.reported) return;
+			this.reported = true;
 			log.error(`${label} crashed and now renders nothing:`, error);
 		}
 
 		render(): unknown {
-			// `failed` is shared and set before React re-renders a caught boundary.
-			return failed ? null : jsx(inner, this.props);
+			const state = this.state as BoundaryState;
+			return state.failed ? null : jsx(inner, this.props);
 		}
 	}
 

@@ -92,11 +92,14 @@ function readIdList(key: string): string[] {
 	}
 }
 
-function writeIdList(key: string, ids: readonly string[]): void {
+function writeIdList(key: string, ids: readonly string[]): boolean {
 	try {
-		globalThis.localStorage?.setItem(key, JSON.stringify(ids));
+		const storage = globalThis.localStorage;
+		if (storage === undefined) return false;
+		storage.setItem(key, JSON.stringify(ids));
+		return true;
 	} catch {
-		/* quota / private mode */
+		return false;
 	}
 }
 
@@ -387,13 +390,13 @@ export function createBgbSection(React: ReactLike, deps: SectionDeps): (props: S
 			pinned,
 			onStar: (plugin: PluginRowModel) => {
 				const next = toggleId(starred, plugin.id, false);
+				if (!writeIdList("bgb:starred-plugins", next)) return;
 				setStarred(next);
-				writeIdList("bgb:starred-plugins", next);
 			},
 			onPin: (plugin: PluginRowModel) => {
 				const next = toggleId(pinned, plugin.id, true);
+				if (!writeIdList("bgb:pinned-plugins", next)) return;
 				setPinned(next);
-				writeIdList("bgb:pinned-plugins", next);
 			},
 		};
 		const open = plugins.find((plugin) => plugin.key === openKey);
