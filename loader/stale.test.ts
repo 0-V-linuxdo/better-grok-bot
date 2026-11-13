@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createBridgeClient } from "./bridge-client.ts";
-import { haltIfStaleBuild, MAX_STALE_RELOADS, STALE_CONNECT_MS, STALE_RELOAD_DELAY_MS, STALE_RELOADS_KEY } from "./stale.ts";
+import { haltIfStaleBuild, MAX_STALE_RELOADS, STALE_CONNECT_MS, STALE_RELOAD_DELAY_MS, STALE_RELOADS_KEY, STALE_SPLASH_ID } from "./stale.ts";
 import { createFakeSockets, FakeClock, fakeGlobals, recordingLogger } from "./test/fakes.ts";
 
 const UA = (version: string): string =>
@@ -25,7 +25,59 @@ function memoryStorage(): Storage {
 	};
 }
 
-function setup(running: string, withBridge: boolean) {
+interface FakeNode {
+	id: string;
+	className: string;
+	textContent: string;
+	children: FakeNode[];
+	setAttribute(name: string, value: string): void;
+	getAttribute(name: string): string | null;
+	append(...nodes: FakeNode[]): void;
+}
+
+function fakeDocument(): { doc: Document; byId: Map<string, FakeNode> } {
+	const byId = new Map<string, FakeNode>();
+	const node = (): FakeNode => {
+		const attrs: Record<string, string> = {};
+		const el: FakeNode = {
+			className: "",
+			textContent: "",
+			children: [],
+			get id() {
+				return attrs.id ?? "";
+			},
+			set id(value: string) {
+				if (attrs.id) byId.delete(attrs.id);
+				attrs.id = value;
+				if (value) byId.set(value, el);
+			},
+			setAttribute(name, value) {
+				attrs[name] = value;
+				if (name === "id") el.id = value;
+			},
+			getAttribute(name) {
+				return attrs[name] ?? null;
+			},
+			append(...nodes) {
+				el.children.push(...nodes);
+				for (const child of nodes) if (child.id) byId.set(child.id, child);
+			},
+		};
+		return el;
+	};
+	const documentElement = node();
+	const doc = {
+		documentElement,
+		get body(): FakeNode | null {
+			return documentElement.children[0] ?? null;
+		},
+		getElementById: (id: string) => byId.get(id) ?? null,
+		createElement: () => node(),
+	};
+	return { doc: doc as unknown as Document, byId };
+}
+
+function setup(running: string, withBridge: boolean, document?: Document) {
 	const clock = new FakeClock();
 	const fake = createFakeSockets();
 	const session = memoryStorage();
@@ -54,6 +106,7 @@ function setup(running: string, withBridge: boolean) {
 						})
 					: null,
 			log,
+			document,
 		});
 	return { ...fake, clock, session, log, guard, stops: () => stops, reloads: () => reloads };
 }
@@ -104,6 +157,20 @@ describe("stale build guard", () => {
 		expect(socket.closedWith).toBe(1000);
 		clock.advance(120_000);
 		expect(reloads()).toBe(1);
+	});
+
+	test("paints a splash on a head-only document before stop", () => {
+		const { doc, byId } = fakeDocument();
+		const { guard, stops } = setup("0.69.0", false, doc);
+		expect(guard()).toBe(true);
+		expect(stops()).toBe(1);
+		const splash = byId.get(STALE_SPLASH_ID);
+		expect(splash).toBeDefined();
+		expect(splash?.getAttribute("role")).toBe("status");
+		const texts = (splash?.children ?? []).map((child) => child.textContent);
+		expect(texts).toContain("Better Grok Bot");
+		expect(texts).toContain("Updating the interface for Grok Bot 0.69.0");
+		expect(texts).toContain("After an app update this can take about a minute.");
 	});
 
 	test("ignores builds for other versions and reloads after 120 s without one", () => {

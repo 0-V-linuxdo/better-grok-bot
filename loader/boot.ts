@@ -87,6 +87,7 @@ export function boot(options: BootOptions = {}): BetterGrokBotRuntime | undefine
 		clock,
 		openBridge,
 		log,
+		document: global.document,
 	});
 	if (halted) return undefined;
 

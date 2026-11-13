@@ -1,15 +1,28 @@
 import { appVersionFromUserAgent, type PluginLogger } from "../sdk/index.ts";
+import { APP_NAME } from "./brand.ts";
 import { BridgeRequestError, type BridgeClient } from "./bridge-client.ts";
 import type { Clock } from "./clock.ts";
 import { describeError } from "./logger.ts";
 
 export const STALE_RELOADS_KEY = "bgb:stale-build-reloads";
+export const STALE_SPLASH_ID = "bgb-stale-splash";
 export const MAX_STALE_RELOADS = 30;
 export const STALE_RELOAD_DELAY_MS = 500;
 /** How long the halted page waits for the agent before falling back to plain reloads. */
 export const STALE_CONNECT_MS = 2_000;
 /** How long it waits for a build of the running app version once the agent is asked for one. */
 export const STALE_REBUILD_WAIT_MS = 120_000;
+
+const SPLASH_CSS =
+	"html,body{margin:0;height:100%;background:#161616;color:#ececec;font:14px/1.45 -apple-system,BlinkMacSystemFont,sans-serif}" +
+	`#${STALE_SPLASH_ID}{box-sizing:border-box;display:flex;flex-direction:column;justify-content:center;min-height:100%;padding:48px 56px}` +
+	`#${STALE_SPLASH_ID} p{margin:0}` +
+	`#${STALE_SPLASH_ID} .bgb-stale-splash__brand{opacity:.55;margin-bottom:12px}` +
+	`#${STALE_SPLASH_ID} .bgb-stale-splash__title{font-size:20px;font-weight:500;margin-bottom:8px}` +
+	`#${STALE_SPLASH_ID} .bgb-stale-splash__hint{opacity:.55}` +
+	`#${STALE_SPLASH_ID} .bgb-stale-splash__bar{width:168px;height:2px;margin-top:24px;overflow:hidden;border-radius:1px;background:#ffffff14}` +
+	`#${STALE_SPLASH_ID} .bgb-stale-splash__bar>i{display:block;height:100%;width:40%;background:#0a84ff;animation:bgb-stale-slide 1.1s ease-in-out infinite}` +
+	"@keyframes bgb-stale-slide{0%{transform:translateX(-120%)}100%{transform:translateX(350%)}}";
 
 export type StaleBridge = Pick<BridgeClient, "state" | "start" | "stop" | "subscribe" | "on" | "request">;
 
@@ -24,6 +37,41 @@ export interface StaleGuardOptions {
 	/** A bridge client for this build, or null when it has none. */
 	openBridge(): StaleBridge | null;
 	log: PluginLogger;
+	/** Halt runs in `<head>`: without this the stopped parser never creates `body`, so the window stays blank. */
+	document?: Document;
+}
+
+/**
+ * Fills the halted page so a Grok Bot update is not a blank window for the length of the rebuild
+ * (`window.stop()` in `<head>` otherwise prevents `body` from parsing).
+ */
+export function paintStaleSplash(doc: Document, running: string): void {
+	if (doc.getElementById(STALE_SPLASH_ID) !== null) return;
+	let body = doc.body;
+	if (body === null) {
+		body = doc.createElement("body");
+		doc.documentElement.append(body);
+	}
+	const style = doc.createElement("style");
+	style.textContent = SPLASH_CSS;
+	const root = doc.createElement("div");
+	root.id = STALE_SPLASH_ID;
+	root.setAttribute("role", "status");
+	const brand = doc.createElement("p");
+	brand.className = "bgb-stale-splash__brand";
+	brand.textContent = APP_NAME;
+	const title = doc.createElement("p");
+	title.className = "bgb-stale-splash__title";
+	title.textContent = `Updating the interface for Grok Bot ${running}`;
+	const hint = doc.createElement("p");
+	hint.className = "bgb-stale-splash__hint";
+	hint.textContent = "After an app update this can take about a minute.";
+	const bar = doc.createElement("div");
+	bar.className = "bgb-stale-splash__bar";
+	bar.setAttribute("aria-hidden", "true");
+	bar.append(doc.createElement("i"));
+	root.append(brand, title, hint, bar);
+	body.append(style, root);
 }
 
 /**
@@ -59,6 +107,7 @@ export function haltIfStaleBuild(options: StaleGuardOptions): boolean {
 		return false;
 	}
 	if (attempts === 0) log.warn(`this build is for Grok Bot ${buildAppVersion} but ${running} is running; waiting for the rebuild`);
+	if (options.document !== undefined) paintStaleSplash(options.document, running);
 	options.stop();
 	waitForRebuild(options, running);
 	return true;

@@ -11,15 +11,15 @@ export default definePlugin({
 	id: "connect-apps",
 	name: "Compact Connect Apps",
 	description: "Keep Connect apps as the compact plus button. Expanding the sidebar will not replay the Gmail/Drive/Calendar logo strip.",
-	version: "0.1.0",
+	version: "0.1.1",
 	apiVersion: 1,
 	runtime: "runtime.ts",
 	patches: [
 		{
 			id: "connect-apps-icons-only",
 			file: APP_CHUNK,
-			find: /function stt\((\i),(\i)\)\{return \1!==void 0&&\1>=\2\?`iconsOnly`:`labeled`\}/,
-			replace: "function stt($1,$2){return `iconsOnly`}",
+			find: /function (\i)\((\i),(\i)\)\{return \2!==void 0&&\2>=\3\?`iconsOnly`:`labeled`\}/,
+			replace: "function $1($2,$3){return `iconsOnly`}",
 		},
 	],
 });

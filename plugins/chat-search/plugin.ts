@@ -13,16 +13,17 @@ export default definePlugin({
 	id: "chat-search",
 	name: "Chat Search",
 	description: "Search the current bot conversation, including earlier history, using the app's native finder and highlighted match navigation.",
-	version: "0.1.9",
+	version: "0.1.10",
 	apiVersion: 1,
 	runtime: "runtime.ts",
 	styles: "styles.css",
 	patches: [
 		{
 			// Match the root's command object, not the palette's matching props destructuring.
+			// 1.0.1 inserts chatColumn between isChatSurfaceVisible and isCommandPaletteOpen.
 			id: "native-open-command",
 			file: ENTRY_CHUNK,
-			find: /(\{currentAgent:\i,currentAgentId:\i,isAnysphereUser:\i\.isAnysphereUser,isDevBuild:\i,isChatSurfaceVisible:\i,isCommandPaletteOpen:\i,openCommandPalette:\i,closeCommandPalette:\i,toggleCommandPalette:\i,)openFindInChat:(\i),isTeamAgentsEnabled:/,
+			find: /(\{currentAgent:\i,currentAgentId:\i,isAnysphereUser:\i\.isAnysphereUser,isDevBuild:\i,isChatSurfaceVisible:\i,chatColumn:\i,isCommandPaletteOpen:\i,openCommandPalette:\i,closeCommandPalette:\i,toggleCommandPalette:\i,)openFindInChat:(\i),isTeamAgentsEnabled:/,
 			replace: '$1openFindInChat:(globalThis.BetterGrokBot?.call("chat-search","captureOpen",$2)??$2),isTeamAgentsEnabled:',
 			expect: 1,
 		},

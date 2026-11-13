@@ -6,6 +6,8 @@ All notable changes to Better Grok Bot are documented here.
 
 ### Fixed
 
+- After a Grok Bot app update, the stale-build guard (`window.stop()` in `<head>`) left a blank window for the length of the renderer rebuild (about a minute on 1.0.3). It now paints an “Updating the interface for Grok Bot …” splash, including creating `body` when the parser never reaches it.
+- Chat Search **0.1.10** and Compact Connect Apps **0.1.1**: retargeted for Grok Bot 1.0.1. The root command object now has `chatColumn` before `openFindInChat`. The Connect apps layout helper is no longer hardcoded as `stt` (1.0.1 minifies it to another ident).
 - Sidebar Folders **0.2.9**: after a successful host list, a later host reject keeps the last local mirror (does not hide folder UI). `delete-folder` aborts a live rename overlay and disconnects the rename watcher (no blur-commit of a deleted id).
 - Sidebar Folders **0.2.8**: UI `+` creates through `persistEdit` (same owned write as agent `create-folder`). Esc on a never-renamed overlay deletes the untitled folder.
 - Helper: a Win/Linux child that never says hello is killed after 10s and counts as a failed start (Darwin launchd unchanged).
